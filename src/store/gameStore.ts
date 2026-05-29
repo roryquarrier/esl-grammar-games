@@ -1,6 +1,8 @@
 import { create } from 'zustand';
-import { Board, createEmptyBoard, canDropInColumn } from '../types/board';
 
+// Board is 6 rows x 7 columns
+export type Cell = 0 | 1 | 2; // 0 = empty, 1 = player 1, 2 = player 2
+export type Board = Cell[][];
 export type Player = 1 | 2;
 export type GameStatus = 'playing' | 'won' | 'draw';
 
@@ -9,89 +11,118 @@ export interface GameState {
   currentPlayer: Player;
   status: GameStatus;
   winner: Player | null;
-  
+  lastMove: { row: number; col: number } | null;
+
   // Actions
-  makeMove: (column: number) => boolean;
+  dropPiece: (col: number) => boolean; // Returns false if invalid move
   resetGame: () => void;
 }
 
-const OTHER_PLAYER: Record<Player, Player> = { 1: 2, 2: 1 };
+const ROWS = 6;
+const COLS = 7;
 
-const checkWin = (board: Board, player: Player): boolean => {
-  const rows = 6;
-  const cols = 7;
+const createEmptyBoard = (): Board => {
+  return Array(ROWS)
+    .fill(null)
+    .map(() => Array(COLS).fill(0) as Cell[]);
+};
 
-  // Horizontal
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c <= cols - 4; c++) {
-      if (board[r][c] === player && board[r][c+1] === player && board[r][c+2] === player && board[r][c+3] === player) {
-        return true;
+const checkWin = (board: Board, row: number, col: number, player: Player): boolean => {
+  const directions = [
+    { dr: 0, dc: 1 },   // horizontal
+    { dr: 1, dc: 0 },   // vertical
+    { dr: 1, dc: 1 },   // diagonal down-right
+    { dr: 1, dc: -1 },  // diagonal down-left
+  ];
+
+  for (const { dr, dc } of directions) {
+    let count = 1;
+
+    // Check positive direction
+    for (let i = 1; i < 4; i++) {
+      const r = row + dr * i;
+      const c = col + dc * i;
+      if (r >= 0 && r < ROWS && c >= 0 && c < COLS && board[r][c] === player) {
+        count++;
+      } else {
+        break;
       }
     }
-  }
-  // Vertical
-  for (let r = 0; r <= rows - 4; r++) {
-    for (let c = 0; c < cols; c++) {
-      if (board[r][c] === player && board[r+1][c] === player && board[r+2][c] === player && board[r+3][c] === player) {
-        return true;
+
+    // Check negative direction
+    for (let i = 1; i < 4; i++) {
+      const r = row - dr * i;
+      const c = col - dc * i;
+      if (r >= 0 && r < ROWS && c >= 0 && c < COLS && board[r][c] === player) {
+        count++;
+      } else {
+        break;
       }
     }
+
+    if (count >= 4) return true;
   }
-  // Diagonal ↘
-  for (let r = 0; r <= rows - 4; r++) {
-    for (let c = 0; c <= cols - 4; c++) {
-      if (board[r][c] === player && board[r+1][c+1] === player && board[r+2][c+2] === player && board[r+3][c+3] === player) {
-        return true;
-      }
-    }
-  }
-  // Diagonal ↗
-  for (let r = 3; r < rows; r++) {
-    for (let c = 0; c <= cols - 4; c++) {
-      if (board[r][c] === player && board[r-1][c+1] === player && board[r-2][c+2] === player && board[r-3][c+3] === player) {
-        return true;
-      }
-    }
-  }
+
   return false;
 };
 
-const checkDraw = (board: Board): boolean =>
-  board.every(row => row.every(cell => cell !== 0));
+const checkDraw = (board: Board): boolean => {
+  return board[0].every(cell => cell !== 0);
+};
 
 export const useGameStore = create<GameState>((set, get) => ({
   board: createEmptyBoard(),
   currentPlayer: 1,
   status: 'playing',
   winner: null,
+  lastMove: null,
 
-  makeMove: (column: number) => {
+  dropPiece: (col: number) => {
     const { board, currentPlayer, status } = get();
-    
+
+    // Game is over
     if (status !== 'playing') return false;
-    if (!canDropInColumn(board, column)) return false;
 
-    // Find lowest empty row
-    let targetRow = -1;
-    for (let r = 5; r >= 0; r--) {
-      if (board[r][column] === 0) { targetRow = r; break; }
+    // Column is full
+    if (board[0][col] !== 0) return false;
+
+    // Find lowest empty row in column
+    let row = ROWS - 1;
+    while (row >= 0 && board[row][col] !== 0) {
+      row--;
     }
-    if (targetRow === -1) return false;
 
-    // Clone board and place disc
-    const newBoard = board.map(row => [...row]) as Board;
-    newBoard[targetRow][column] = currentPlayer;
+    // Create new board with piece placed
+    const newBoard = board.map(r => [...r]) as Board;
+    newBoard[row][col] = currentPlayer;
 
-    if (checkWin(newBoard, currentPlayer)) {
-      set({ board: newBoard, winner: currentPlayer, status: 'won' });
+    // Check for win
+    if (checkWin(newBoard, row, col, currentPlayer)) {
+      set({
+        board: newBoard,
+        status: 'won',
+        winner: currentPlayer,
+        lastMove: { row, col },
+      });
       return true;
     }
+
+    // Check for draw
     if (checkDraw(newBoard)) {
-      set({ board: newBoard, status: 'draw' });
+      set({
+        board: newBoard,
+        status: 'draw',
+        lastMove: { row, col },
+      });
       return true;
     }
 
-    set({ board: newBoard, currentPlayer: OTHER_PLAYER[currentPlayer] });
+    // Switch player
+    set({
+      board: newBoard,
+      currentPlayer: currentPlayer === 1 ? 2 : 1,
+      lastMove: { row, col },
+    });
     return true;
   },
 
@@ -101,6 +132,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       currentPlayer: 1,
       status: 'playing',
       winner: null,
+      lastMove: null,
     });
   },
 }));
