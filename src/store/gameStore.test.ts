@@ -118,4 +118,42 @@ describe('gameStore', () => {
     expect(status).toBe('playing');
     expect(winner).toBeNull();
   });
+
+  // ─── AI mode tests ─────────────────────────────────────────
+
+  it('defaults to pvp mode', () => {
+    const { mode, aiDifficulty, aiPlayer, isAIThinking } = useGameStore.getState();
+    expect(mode).toBe('pvp');
+    expect(aiDifficulty).toBe('greedy');
+    expect(aiPlayer).toBe(2);
+    expect(isAIThinking).toBe(false);
+  });
+
+  it('setGameMode switches to pve and resets', () => {
+    const { setGameMode, dropPiece } = useGameStore.getState();
+    dropPiece(0);
+    setGameMode('pve', 'minimax');
+    const { mode, aiDifficulty, board, currentPlayer, status } = useGameStore.getState();
+    expect(mode).toBe('pve');
+    expect(aiDifficulty).toBe('minimax');
+    expect(board[5][0]).toBe(0); // board was reset
+    expect(currentPlayer).toBe(1);
+    expect(status).toBe('playing');
+  });
+
+  it('setGameMode defaults difficulty to greedy', () => {
+    const { setGameMode } = useGameStore.getState();
+    setGameMode('pve');
+    expect(useGameStore.getState().aiDifficulty).toBe('greedy');
+  });
+
+  it('resetGame preserves mode settings', () => {
+    const { setGameMode, resetGame } = useGameStore.getState();
+    setGameMode('pve', 'minimax');
+    resetGame();
+    const { mode, aiDifficulty, aiPlayer } = useGameStore.getState();
+    expect(mode).toBe('pve');
+    expect(aiDifficulty).toBe('minimax');
+    expect(aiPlayer).toBe(2);
+  });
 });

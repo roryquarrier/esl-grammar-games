@@ -11,7 +11,11 @@ const MAX_WRONG_ATTEMPTS = 3;
 const COOLDOWN_MS = 5000;
 
 export function GameScreen() {
-  const { board, currentPlayer, status, winner, dropPiece } = useGameStore();
+  const {
+    board, currentPlayer, status, winner,
+    mode, isAIThinking, aiPlayer,
+    dropPiece, triggerAIMove, setGameMode, resetGame,
+  } = useGameStore();
 
   const [phase, setPhase] = useState<GamePhase>('idle');
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
@@ -27,18 +31,20 @@ export function GameScreen() {
     setCooldownRemaining(0);
   };
 
-  // Column click: start question round
+  // Column click: start question round (only for human players)
   const handleColumnClick = useCallback((col: number) => {
     if (phase !== 'idle' || status !== 'playing') return;
+    // Block clicks when it's AI's turn
+    if (mode === 'pve' && currentPlayer === aiPlayer) return;
     setPendingColumn(col);
     setCurrentQuestion(getRandomQuestion());
     setWrongCount(0);
     setPhase('asking');
-  }, [phase, status]);
+  }, [phase, status, mode, currentPlayer, aiPlayer]);
 
   // Answer handler
   const handleAnswer = (isCorrect: boolean) => {
-    if (!pendingColumn) return;
+    if (pendingColumn === null) return;
 
     if (isCorrect) {
       dropPiece(pendingColumn);
@@ -58,6 +64,13 @@ export function GameScreen() {
       setCurrentQuestion(getRandomQuestion());
     }
   };
+
+  // Trigger AI move after human player moves
+  useEffect(() => {
+    if (mode === 'pve' && status === 'playing' && currentPlayer === aiPlayer && phase === 'idle') {
+      triggerAIMove();
+    }
+  }, [currentPlayer, mode, status, aiPlayer, phase, triggerAIMove]);
 
   // Cooldown timer
   useEffect(() => {
@@ -85,16 +98,38 @@ export function GameScreen() {
     }
   }, [status]);
 
-  const { resetGame } = useGameStore.getState();
-
   return (
     <div className={styles.container}>
+      {/* Mode selector — only shown before game starts or can be always visible */}
+      <div className={styles.modeSelector}>
+        <button
+          className={`${styles.modeButton} ${mode === 'pvp' ? styles.modeActive : ''}`}
+          onClick={() => setGameMode('pvp')}
+        >
+          👥 2 Players
+        </button>
+        <button
+          className={`${styles.modeButton} ${mode === 'pve' ? styles.modeActive : ''}`}
+          onClick={() => setGameMode('pve', 'greedy')}
+        >
+          🤖 vs Computer
+        </button>
+      </div>
+
       <div className={styles.statusBar}>
         <div className={styles.turnIndicator}>
-          {status === 'playing' && phase !== 'cooldown' && (
+          {status === 'playing' && phase !== 'cooldown' && !isAIThinking && (
             <span className={styles.turn}>
               <span className={`${styles.playerDot} ${currentPlayer === 1 ? styles.p1 : styles.p2}`} />
-              Player {currentPlayer}'s turn — pick a column!
+              {mode === 'pve' && currentPlayer === aiPlayer
+                ? 'Computer is thinking...'
+                : `Player ${currentPlayer}'s turn — pick a column!`}
+            </span>
+          )}
+          {status === 'playing' && isAIThinking && (
+            <span className={styles.turn}>
+              <span className={`${styles.playerDot} ${styles.p2}`} />
+              🤖 Computer is thinking...
             </span>
           )}
           {phase === 'cooldown' && (
@@ -104,7 +139,9 @@ export function GameScreen() {
           )}
           {status === 'won' && (
             <span className={styles.winner}>
-              🎉 Player {winner} wins!
+              🎉 {mode === 'pve' && winner === aiPlayer
+                ? 'Computer wins!'
+                : `Player ${winner} wins!`}
             </span>
           )}
           {status === 'draw' && (
@@ -130,7 +167,7 @@ export function GameScreen() {
         <QuestionModal
           question={currentQuestion}
           onAnswer={handleAnswer}
-          playerId={`Player ${currentPlayer}`}
+          playerId={mode === 'pve' ? 'You' : `Player ${currentPlayer}`}
         />
       )}
     </div>

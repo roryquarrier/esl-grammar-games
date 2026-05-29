@@ -1,10 +1,12 @@
 import { create } from 'zustand';
+import { getAIMove, type AIDifficulty } from '../game/ai';
 
 // Board is 6 rows x 7 columns
 export type Cell = 0 | 1 | 2; // 0 = empty, 1 = player 1, 2 = player 2
 export type Board = Cell[][];
 export type Player = 1 | 2;
 export type GameStatus = 'playing' | 'won' | 'draw';
+export type GameMode = 'pvp' | 'pve';
 
 export interface GameState {
   board: Board;
@@ -13,9 +15,17 @@ export interface GameState {
   winner: Player | null;
   lastMove: { row: number; col: number } | null;
 
+  // AI mode
+  mode: GameMode;
+  aiDifficulty: AIDifficulty;
+  aiPlayer: Player;
+  isAIThinking: boolean;
+
   // Actions
   dropPiece: (col: number) => boolean; // Returns false if invalid move
   resetGame: () => void;
+  setGameMode: (mode: GameMode, difficulty?: AIDifficulty) => void;
+  triggerAIMove: () => void; // Called after player moves to trigger AI response
 }
 
 const ROWS = 6;
@@ -77,6 +87,12 @@ export const useGameStore = create<GameState>((set, get) => ({
   winner: null,
   lastMove: null,
 
+  // AI defaults
+  mode: 'pvp',
+  aiDifficulty: 'greedy',
+  aiPlayer: 2,
+  isAIThinking: false,
+
   dropPiece: (col: number) => {
     const { board, currentPlayer, status } = get();
 
@@ -127,12 +143,54 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
 
   resetGame: () => {
+    const { mode, aiDifficulty, aiPlayer } = get();
     set({
       board: createEmptyBoard(),
       currentPlayer: 1,
       status: 'playing',
       winner: null,
       lastMove: null,
+      isAIThinking: false,
+      mode,
+      aiDifficulty,
+      aiPlayer,
     });
+  },
+
+  setGameMode: (mode: GameMode, difficulty?: AIDifficulty) => {
+    set({
+      mode,
+      aiDifficulty: difficulty ?? 'greedy',
+      aiPlayer: 2, // AI is always player 2 (goes second)
+    });
+    // Reset the game when switching modes
+    get().resetGame();
+  },
+
+  triggerAIMove: () => {
+    const { status, mode, aiPlayer, currentPlayer, isAIThinking } = get();
+
+    // Only trigger in PvE mode, when it's AI's turn, game is playing, and not already thinking
+    if (mode !== 'pve' || status !== 'playing' || currentPlayer !== aiPlayer || isAIThinking) {
+      return;
+    }
+
+    set({ isAIThinking: true });
+
+    // Small delay to make AI feel natural (not instant)
+    setTimeout(() => {
+      const { board: currentBoard, status: currentStatus, currentPlayer: turn, aiPlayer: ai, aiDifficulty: diff } = get();
+      // Re-check state hasn't changed
+      if (currentStatus !== 'playing' || turn !== ai) {
+        set({ isAIThinking: false });
+        return;
+      }
+
+      const col = getAIMove(currentBoard, ai, diff);
+      set({ isAIThinking: false });
+      if (col >= 0) {
+        get().dropPiece(col);
+      }
+    }, 600); // 600ms "thinking" delay
   },
 }));
