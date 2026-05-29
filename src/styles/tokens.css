@@ -1,0 +1,39 @@
+:root {
+  /* Colour */
+  --color-forest: #22613e;
+  --color-emerald: #28ba72;
+  --color-mint: #99dbb0;
+  --color-sage: #def3e4;
+  --color-night: #121212;
+  --color-amber: #f5a623;
+
+  /* Computed colours */
+  --color-forest-light: rgba(40, 186, 114, 0.1);
+  --color-forest-dark: #1a4a2f;
+
+  /* Spacing (4px grid) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Squircle radii */
+  --radius-card: 28px;
+  --radius-button: 16px;
+  --radius-chip: 8px;
+
+  /* Touch targets */
+  --hit-target-small: 44px;
+  --hit-target-large: 60px;
+  --hit-target-mute: 48px;
+
+  /* Board-specific */
+  --grid-gap: 4px;
+  --cell-size: 72px;
+  --spacing-md: 16px;
+  --radius-lg: 24px;
+}
