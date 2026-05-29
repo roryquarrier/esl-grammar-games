@@ -6,9 +6,10 @@ import styles from './Board.module.css';
 interface BoardProps {
   board: BoardType;
   onClick: (col: number) => void;
+  lastMove?: { row: number; col: number } | null;
 }
 
-export function Board({ board, onClick }: BoardProps) {
+export function Board({ board, onClick, lastMove }: BoardProps) {
   const [focusedColumn, setFocusedColumn] = useState(0);
   const cellRefs = useRef<(HTMLDivElement | null)[][]>(
     Array.from({ length: 6 }, () => Array(7).fill(null))
@@ -70,6 +71,7 @@ export function Board({ board, onClick }: BoardProps) {
               onClick={() => handleColumnClick(colIdx)}
               isFocused={focusedColumn === colIdx && rowIdx === 0}
               isColumnFocused={focusedColumn === colIdx}
+              isLastMove={lastMove?.row === rowIdx && lastMove?.col === colIdx}
             />
           ))}
         </div>

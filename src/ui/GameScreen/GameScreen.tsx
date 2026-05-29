@@ -12,7 +12,7 @@ const COOLDOWN_MS = 5000;
 
 export function GameScreen() {
   const {
-    board, currentPlayer, status, winner,
+    board, currentPlayer, status, winner, lastMove,
     mode, isAIThinking, aiPlayer,
     dropPiece, triggerAIMove, setGameMode, resetGame,
   } = useGameStore();
@@ -161,7 +161,7 @@ export function GameScreen() {
         </div>
       )}
 
-      <Board board={board} onClick={handleColumnClick} />
+      <Board board={board} onClick={handleColumnClick} lastMove={lastMove} />
 
       {phase === 'asking' && currentQuestion && (
         <QuestionModal
