@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Board } from '../Board/Board';
+import { MoveHistory } from '../MoveHistory/MoveHistory';
 import { QuestionModal, type Question } from '../QuestionModal/QuestionModal';
 import { useGameStore } from '../../store/gameStore';
 import { getRandomQuestion } from '../../questions/questionBank';
@@ -12,7 +13,7 @@ const COOLDOWN_MS = 5000;
 
 export function GameScreen() {
   const {
-    board, currentPlayer, status, winner, lastMove,
+    board, currentPlayer, status, winner, lastMove, moveHistory,
     mode, isAIThinking, aiPlayer,
     dropPiece, triggerAIMove, setGameMode, resetGame,
   } = useGameStore();
@@ -100,7 +101,7 @@ export function GameScreen() {
 
   return (
     <div className={styles.container}>
-      {/* Mode selector — only shown before game starts or can be always visible */}
+      {/* Mode selector */}
       <div className={styles.modeSelector}>
         <button
           className={`${styles.modeButton} ${mode === 'pvp' ? styles.modeActive : ''}`}
@@ -161,7 +162,11 @@ export function GameScreen() {
         </div>
       )}
 
-      <Board board={board} onClick={handleColumnClick} lastMove={lastMove} />
+      {/* Game area: board + move history side by side */}
+      <div className={styles.gameArea}>
+        <Board board={board} onClick={handleColumnClick} lastMove={lastMove} />
+        <MoveHistory moves={moveHistory} gameMode={mode} />
+      </div>
 
       {phase === 'asking' && currentQuestion && (
         <QuestionModal

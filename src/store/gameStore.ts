@@ -8,12 +8,23 @@ export type Player = 1 | 2;
 export type GameStatus = 'playing' | 'won' | 'draw';
 export type GameMode = 'pvp' | 'pve';
 
+export interface MoveRecord {
+  moveNumber: number;
+  player: Player;
+  col: number;
+  row: number;
+  isAI: boolean;
+}
+
 export interface GameState {
   board: Board;
   currentPlayer: Player;
   status: GameStatus;
   winner: Player | null;
   lastMove: { row: number; col: number } | null;
+
+  // Move history
+  moveHistory: MoveRecord[];
 
   // AI mode
   mode: GameMode;
@@ -86,6 +97,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   status: 'playing',
   winner: null,
   lastMove: null,
+  moveHistory: [],
 
   // AI defaults
   mode: 'pvp',
@@ -94,7 +106,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   isAIThinking: false,
 
   dropPiece: (col: number) => {
-    const { board, currentPlayer, status } = get();
+    const { board, currentPlayer, status, moveHistory, mode, aiPlayer } = get();
 
     // Game is over
     if (status !== 'playing') return false;
@@ -112,6 +124,15 @@ export const useGameStore = create<GameState>((set, get) => ({
     const newBoard = board.map(r => [...r]) as Board;
     newBoard[row][col] = currentPlayer;
 
+    // Record the move
+    const newMove: MoveRecord = {
+      moveNumber: moveHistory.length + 1,
+      player: currentPlayer,
+      col,
+      row,
+      isAI: mode === 'pve' && currentPlayer === aiPlayer,
+    };
+
     // Check for win
     if (checkWin(newBoard, row, col, currentPlayer)) {
       set({
@@ -119,6 +140,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         status: 'won',
         winner: currentPlayer,
         lastMove: { row, col },
+        moveHistory: [...moveHistory, newMove],
       });
       return true;
     }
@@ -129,6 +151,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         board: newBoard,
         status: 'draw',
         lastMove: { row, col },
+        moveHistory: [...moveHistory, newMove],
       });
       return true;
     }
@@ -138,6 +161,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       board: newBoard,
       currentPlayer: currentPlayer === 1 ? 2 : 1,
       lastMove: { row, col },
+      moveHistory: [...moveHistory, newMove],
     });
     return true;
   },
@@ -150,6 +174,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       status: 'playing',
       winner: null,
       lastMove: null,
+      moveHistory: [],
       isAIThinking: false,
       mode,
       aiDifficulty,
