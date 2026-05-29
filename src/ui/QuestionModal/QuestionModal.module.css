@@ -1,0 +1,120 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: var(--space-4);
+}
+
+.modal {
+  background: var(--color-sage);
+  border-radius: var(--radius-card);
+  padding: var(--space-6);
+  max-width: 600px;
+  width: 100%;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.header {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.playerTag {
+  background: var(--color-forest);
+  color: var(--color-sage);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-chip);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.topicBadge {
+  background: var(--color-mint);
+  color: var(--color-forest);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-chip);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.levelBadge {
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-chip);
+  font-size: 14px;
+  font-weight: 600;
+  margin-left: auto;
+}
+
+.easy {
+  background: var(--color-mint);
+  color: var(--color-forest);
+}
+
+.medium {
+  background: var(--color-amber);
+  color: var(--color-forest);
+}
+
+.hard {
+  background: #e74c3c;
+  color: white;
+}
+
+.question {
+  font-size: 20px;
+  line-height: 1.4;
+  margin-bottom: var(--space-5);
+  color: var(--color-forest);
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.optionButton {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: white;
+  border: 2px solid var(--color-mint);
+  border-radius: var(--radius-button);
+  font-size: 16px;
+  text-align: left;
+  cursor: pointer;
+  transition: all var(--duration-fast);
+  min-height: 52px;
+}
+
+.optionButton:hover {
+  background: var(--color-mint);
+  border-color: var(--color-emerald);
+  transform: translateX(4px);
+}
+
+.optionButton:focus-visible {
+  outline: 3px solid var(--color-emerald);
+  outline-offset: 2px;
+}
+
+.optionLetter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: var(--color-forest);
+  color: var(--color-sage);
+  border-radius: 50%;
+  font-weight: 700;
+  font-size: 14px;
+  flex-shrink: 0;
+}

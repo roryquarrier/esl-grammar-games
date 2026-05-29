@@ -78,3 +78,21 @@
   outline: 2px solid var(--sage-0);
   outline-offset: 2px;
 }
+
+.cooldown {
+  color: var(--color-amber);
+  font-weight: 600;
+  font-size: 18px;
+}
+
+.wrongCounter {
+  background: var(--color-amber);
+  color: var(--night-0);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-button);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  max-width: 700px;
+  width: 100%;
+}
