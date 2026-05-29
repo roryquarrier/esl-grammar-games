@@ -1,13 +1,11 @@
 import './App.css'
 import { AppChrome } from './ui/AppChrome/AppChrome'
+import { GameScreen } from './ui/GameScreen/GameScreen'
 
 function App() {
   return (
     <AppChrome>
-      <div className="container">
-        <h2>Welcome to Grammar Connect 4</h2>
-        <p>Game coming soon...</p>
-      </div>
+      <GameScreen />
     </AppChrome>
   )
 }

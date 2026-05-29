@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Board, CellValue, createEmptyBoard, canDropInColumn } from '../types/board';
+import { Board, createEmptyBoard, canDropInColumn } from '../types/board';
 
 export type Player = 1 | 2;
 export type GameStatus = 'playing' | 'won' | 'draw';
