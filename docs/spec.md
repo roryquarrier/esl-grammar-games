@@ -586,10 +586,11 @@ The UI is composed of small, focused React components. Each component owns its o
 │               └── /play/result/:id  → <GameResult>
 │
 ├── <Landing>/<TeacherShell>/<StudentShell>
-│   └── <AppChrome>                   // fullscreen wrapper + mute button + settings
-│       ├── <MuteToggle/>             // 48px, always visible
-│       ├── <FullscreenButton/>       // Fullscreen API with Safari fallback
-│       └── {children}                // page content
+│   └── <GameErrorBoundary>           // wraps game components; catches render errors,
+│       └── <AppChrome>               // resets to lobby with a friendly message
+│           ├── <MuteToggle/>         // 48px, always visible
+│           ├── <FullscreenButton/>   // Fullscreen API with Safari fallback
+│           └── {children}            // page content
 │
 ├── <Lobby>                           // pre-game configuration
 │   ├── <BookSelector/>               // Red / Blue / Green
@@ -618,15 +619,19 @@ The UI is composed of small, focused React components. Each component owns its o
 └── <DashboardLite>                   // MVP teacher view
     ├── <StudentList/>
     │   └── <StudentRow/> × N         // name | last seen | accuracy | top 3 weak
-    └── <ClassCodeDisplay/>           // code students type to join
+    ├── <ClassCodeDisplay/>           // code students type to join
+    └── <DataRetentionNotice/>        // "Student data is deleted 30 days after account closure."
+                                      // Links to full retention policy; satisfies the transparency
+                                      // requirement that the 30-day grace period is user-visible.
 ```
 
 ### Key design decisions
 
+- **`<GameErrorBoundary>`** is a React error boundary that wraps every game-related component tree. On render crash (buggy Supabase response, malformed question JSON), it resets local game state, shows a friendly "Oops — let's start a new game" screen with a retry button, and logs the error to a `client_errors` table (post-MVP schema) for triage.
 - **`<AppChrome>`** is a single wrapper used by every page so the mute toggle + fullscreen button are guaranteed present.
 - **`<DiscSprite>`** is polymorphic: default SVG (Framer Motion spring-in), swaps to Lottie JSON when the disc is part of a winning line or celebrating the "67" easter egg.
 - **`<QuestionModal>`** is a dialog (`role="dialog"`, `aria-modal`) that blocks board interaction until the question is answered. It is accessible via keyboard (tab through options, Enter to select).
-- **`<CooldownTimer>`** is a purely visual 5-second overlay with a hidden `aria-live="polite"` region announcing the remaining time for screen readers.
+- **`<CooldownTimer>`** is a purely visual 5-second overlay with a hidden `aria-live="polite"` region announcing the remaining time for screen readers. **Testing note**: this region must be tested manually with VoiceOver (Safari on iPad) and NVDA (desktop Chrome) to ensure it doesn't spam repeated announcements. If flaky, switch to a single announcement ("Cooldown started. You can answer again in 5 seconds.") instead of per-second updates.
 
 ### Routes & auth gates
 
@@ -662,7 +667,7 @@ interface AuthStore {
 
 ### `useGameStore` — current game state
 
-Not persisted (resets per game). Derives board state from `moves`.
+Persisted to IndexedDB via `idb-keyval` (keyed on `game.id`). This is the source of truth for offline resilience: if the student loses Wi-Fi mid-game, reloads the browser, or switches tabs, the board state survives. On every action (move, question answer, disc drop), the new state is written to IndexedDB *before* the Supabase call. If Supabase fails, a retry queue in `src/lib/retry-queue.ts` flushes on reconnect. Not cleared until the game ends (win/draw) or 7 days of inactivity.
 
 ```ts
 interface GameStore {
@@ -722,6 +727,7 @@ interface QuestionCacheStore {
 
 - **Read**: Supabase client via an SDK wrapper in `src/lib/api/`. Every store action that needs remote data calls into this wrapper, not Supabase directly.
 - **Write**: Only `useGameStore` and `useAuthStore` perform writes. The others are pure client-side state.
+- **Optimistic UI + rollback**: when a student drops a disc, we (1) update `useGameStore` immediately for snappy feel, (2) persist to IndexedDB, (3) fire the Supabase INSERT. If (3) fails, we rollback the in-memory state to the prior snapshot (kept in a 1-element undo buffer), surface a toast "Move didn't save — try again", and keep the player's turn active so they can retry without losing their question credit.
 - **Realtime** (post-MVP): Supabase Realtime subscriptions will live in `src/lib/realtime.ts` and will update `useGameStore` when remote board changes arrive. Not wired in MVP.
 
 ---
@@ -933,7 +939,19 @@ Target: **WCAG 2.1 AA** across the entire app. See `references/accessibility-che
 
 - **Teachers**: Clerk-issued session tokens. Server-side verification via Clerk webhook + session secret. No role escalation possible (no "admin" role exists).
 - **Students**: Short-lived (4h default) JWTs signed by our backend with a rotating secret (daily rotation via cron). JWT payload = `{ studentId, teacherId, bookLevel, issuedAt, expiresAt }`. Server-side verification on every request.
-- **JWT revocation**: a `student_sessions` table tracks issued JWTs; a revoked JWT (teacher deletes the student, or explicitly revokes the session) is rejected.
+### JWT revocation
+
+- **JWT rotation**: a `student_sessions` table tracks issued JWTs; a revoked JWT (teacher deletes the student, or explicitly revokes the session) is rejected.
+
+### Emergency revocation
+
+If a JWT leak or systemic breach is suspected:
+1. Rotate the signing secret for student JWTs (cron job `rotate-student-jwt-secret`, or manual `supabase secrets set STUDENT_JWT_SECRET=...`). All outstanding student JWTs are invalidated instantly because verification requires the current secret.
+2. Trigger the `invalidate_all_student_sessions` RPC (supabase function) to wipe the `student_sessions` table.
+3. Rotate the Clerk secret key via the Clerk dashboard; outstanding teacher sessions are invalidated.
+4. Publish a post-incident note to affected teachers via the status page.
+
+The runbook lives in `docs/security-incident-runbook.md` (post-MVP document). Drilled at least once per quarter.
 
 ### RLS recap
 
@@ -1047,7 +1065,7 @@ See `references/testing-patterns.md` for full patterns.
 ### Coverage targets
 
 - `src/game/`: 100% branch coverage (win detection is life-or-death).
-- `src/questions/`: ≥ 95% line coverage; 100% on the adaptive selection algorithm (it's a critical path).
+- `src/questions/`: ≥ 95% line coverage overall; **100% branch coverage on the adaptive selection algorithm** (`src/questions/select.ts`), including explicit tests for: cold-start (<10 attempts), weak-topic bucket selection with ≥3 candidates, strong-topic reinforcement, mixed-pool fallback, topic-filter intersection, pool exhaustion → runtime-LLM fallback. This path determines the product's pedagogical effectiveness.
 - `src/api/`: ≥ 80% line coverage.
 - `src/ui/`: Component-library coverage ≥ 60%.
 
@@ -1117,30 +1135,24 @@ Enforced by `bundlesize` in CI. Any PR that exceeds the budget fails and require
 - ✅ MVP scope including teacher dashboard-lite
 - ✅ 6h runtime LLM cache TTL
 - ✅ Observer persona stays read-only in MVP; email-digest post-MVP
+- ✅ "67" easter egg — **unlockable disc skin**: when any of the player's move count, correct-answer count, or current streak equals 67, the student's discs briefly gain a gold "67" foil stamp for the rest of the game, play a one-time "67 reveal" Lottie animation (gold sparks) on the first winning drop, and permanently award a "67 Club" profile badge visible to teacher + classmates on the leaderboard. Detection hook in Appendix D; asset specs in Appendix E.
 
 ### Open — requires further input
 
-1. **The "67" easter egg** — what is the actual surprise? Options:
-   - (a) Special Lottie animation (retro arcade "67" splash)
-   - (b) Unlockable avatar skin
-   - (c) A hidden grammar lesson with a joke on the number 67
-   - *Decision owner*: Rory
-   - *Deadline*: before implementing `<EasterEgg>` component
-
-2. **Grammar topic taxonomy source** — use Cambridge's published topic list verbatim (risk: copyright, may need a licence), or author our own taxonomy that *aligns* with Cambridge but is our own wording?
+1. **Grammar topic taxonomy source** — use Cambridge's published topic list verbatim (risk: copyright, may need a licence), or author our own taxonomy that *aligns* with Cambridge but is our own wording?
    - *Decision owner*: Rory + education advisor (if any)
    - *Deadline*: before seed authoring begins
 
-3. **Supabase project region** — Singapore (`ap-southeast-1`) is closest to Hong Kong; verify against the chosen plan tier and PDPO data-residency requirements.
+2. **Supabase project region** — Singapore (`ap-southeast-1`) is closest to Hong Kong; verify against the chosen plan tier and PDPO data-residency requirements.
    - *Decision owner*: Rory
 
-4. **Clerk plan tier** — free tier is sufficient for MVP (<10k MAU); if we expect >10k students in first 12 months, evaluate the paid plan before public launch.
+3. **Clerk plan tier** — free tier is sufficient for MVP (<10k MAU); if we expect >10k students in first 12 months, evaluate the paid plan before public launch.
    - *Decision owner*: Rory
 
-5. **Lottie asset sourcing** — commission bespoke vs. licence from lottiefiles. Commissioned is more branded; licensed is faster. Budget TBD.
+4. **Lottie asset sourcing** — commission bespoke vs. licence from lottiefiles. Commissioned is more branded; licensed is faster. Budget TBD.
    - *Decision owner*: Rory
 
-6. **AI opponent difficulty** — MVP specifies "deterministic heuristic". Do we want a minimax with depth-3 lookahead (stronger, but slower on big boards) or a rule-based play-to-block + prefer-centre approach (weaker, but fast and predictable)?
+5. **AI opponent difficulty** — MVP specifies "deterministic heuristic". Do we want a minimax with depth-3 lookahead (stronger, but slower on big boards) or a rule-based play-to-block + prefer-centre approach (weaker, but fast and predictable)?
    - *Decision owner*: foreman (decide during build phase 5.2); easy to swap if wrong
 
 ---
@@ -1215,7 +1227,9 @@ Enforced by `bundlesize` in CI. Any PR that exceeds the budget fails and require
 
 ## Appendix D: Easter Egg Specification
 
-The "67" easter egg detection framework MUST exist in MVP. The specific surprise is an open question (see §15). Detection hook:
+The "67" easter egg detection framework MUST exist in MVP. The specific surprise is **resolved** (see §15): an unlockable disc skin with a profile badge.
+
+**Detection hook**:
 
 ```ts
 function shouldTriggerEasterEgg(ctx: {
@@ -1227,5 +1241,31 @@ function shouldTriggerEasterEgg(ctx: {
 }
 ```
 
-On trigger: replace the normal win/move animation with the easter-egg Lottie JSON (or placeholder if surprise is TBD), play a one-time chime (respects mute), and log a `easter_egg_events` row for analytics (post-MVP schema).
+**Surprise mechanics**:
+
+1. On trigger, set `game.easterEggActiveForPlayer = <playerId>` in `useGameStore`.
+2. The triggering player's discs immediately gain a gold "67" foil stamp overlay (SVG filter on top of the existing disc sprite — palette-respecting).
+3. On the first winning drop of the game (by either player), play a one-time "67 reveal" Lottie animation (gold sparks erupting from the winning disc). Respects mute.
+4. Award a permanent `badge: '67_club'` on the triggering student's progress row. Badge is visible on the leaderboard and in `<DashboardLite>`.
+5. If the same student triggers "67" again in a later game, the badge gains a counter (e.g. "67 Club × 3").
+
+Logged via `easter_egg_events` table (post-MVP schema) for analytics.
+
+## Appendix E: "67" Easter Egg Asset Specification
+
+- **Disc overlay**: a 64×64 SVG layer composited above the player's disc sprite. Gold gradient (palette-extended: `#ffd86b` → `#f5a623`) with a tiny "67" numeral in the centre. Opacity 0.85 so the underlying disc colour still shows.
+- **Lottie reveal**: a 1.5-second JSON animation (≤40 KB gzipped) of gold sparks expanding outward from a centre point. Must be palette-overridable via `lottie-react`'s `colorFilters`. Source: commissioned asset OR a palette-adapted lottiefiles.com licence with clear credit in `LICENSE-ASSETS.md`.
+- **Badge icon**: 24×24 SVG, gold medal with "67" engraved.
+- **Sound**: a short 0.8s chime (MP3, ≤20 KB) played once at trigger moment, respects mute. Asset commissioned with the Lottie.
+
+## Appendix F: Security Incident Runbook (Pointer)
+
+Full runbook lives in `docs/security-incident-runbook.md` (created before public launch). It walks through:
+1. Rotate `STUDENT_JWT_SECRET` via `supabase secrets set`.
+2. Execute `invalidate_all_student_sessions` RPC.
+3. Rotate Clerk secret key.
+4. Notify affected teachers via status page.
+5. Post-incident review within 72 hours.
+
+Drilled quarterly.
 
