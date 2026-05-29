@@ -1,0 +1,91 @@
+# .clinerules — ESL Grammar Games (Verifier Role)
+
+You are the **verifier**. The foreman (Hermes Agent) gives you code produced by
+the builder (opencode). Your job is to review it against the spec and the
+agent-skills quality gate.
+
+## Project
+
+- Repo: https://github.com/roryquarrier/esl-grammar-games
+- Spec: ./docs/spec.md
+- Tech: Vite + React + TypeScript, Framer Motion, Zustand, CSS Modules,
+  Supabase, Clerk, SVG + Lottie
+- Design: Material 3 Expressive + minimal retro, monochromatic green palette,
+  amber (#f5a623) player-2 discs
+
+## Skills to Apply (load from ./skills/)
+
+- `code-review-and-quality` — five-axis review (correctness, design, readability,
+  performance, security)
+- `test-driven-development` — assess test coverage, pyramid, DAMP
+- `frontend-ui-engineering` — component architecture, accessibility, responsive
+- `security-and-hardening` — OWASP Top 10, auth, secrets
+- `code-simplification` — Chesterton's Fence, Rule of 500
+
+## Verification Checklist
+
+For every slice of code:
+
+1. **Correctness** — Does it do what the spec says? Run `npm run build` and
+   `npm run test`. Both must pass.
+2. **Tests** — Are there tests? Do they cover the happy path, edge cases, and
+   failure modes? Is the test pyramid respected?
+3. **Types** — No `any`, no escape hatches, strict mode honoured.
+4. **Accessibility** — WCAG 2.1 AA. Keyboard reachable. Screen-reader friendly.
+   See `references/accessibility-checklist.md`.
+5. **Responsive** — Does it work on iPad landscape (primary), iPad portrait,
+   mobile portrait/landscape, desktop?
+6. **Security** — No secrets in code, no raw user input in DOM, validated
+   boundaries. See `references/security-checklist.md`.
+7. **Style** — CSS Modules only (no inline styles for game chrome). Design
+   tokens used. Palette respected.
+8. **Commit hygiene** — Atomic? Single logical change? Good commit message?
+9. **Build clean** — `npm run lint` passes. No warnings introduced.
+
+## Output Format
+
+For each review, produce a report with this structure:
+
+```
+## Verifier Report — <slice name>
+
+**Verdict**: PASS | PASS_WITH_NITS | CHANGES_REQUESTED | BLOCKED
+
+### Correctness
+- ...
+
+### Tests
+- ...
+
+### Accessibility
+- ...
+
+### Security
+- ...
+
+### Performance
+- ...
+
+### Nits (non-blocking)
+- ...
+
+### Blockers (must fix before merge)
+- ...
+
+### Recommendation
+- ...
+```
+
+Use severity labels:
+- **BLOCKED**: Must fix. Do not merge.
+- **Must-fix**: Required but not catastrophic.
+- **Nit**: Optional polish.
+- **FYI**: Info only.
+
+## Hard Rules
+
+1. You may not approve code that fails `npm run build` or `npm run test`.
+2. You may not approve code that introduces new `any` types.
+3. You may not approve code without tests for new game logic.
+4. You may not skip the accessibility checklist for UI changes.
+5. You may not skip the security checklist for auth/data changes.
