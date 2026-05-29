@@ -11,6 +11,15 @@
   --color-forest-light: rgba(40, 186, 114, 0.1);
   --color-forest-dark: #1a4a2f;
 
+  /* Colour scale variants (for CSS modules) */
+  --forest-0: #0d2a1a;
+  --forest-1: #1e5a3a;
+  --forest-2: #22613e;
+  --emerald-3: #28ba72;
+  --mint-4: #5bc89c;
+  --sage-0: #def3e4;
+  --night-0: #121212;
+
   /* Spacing (4px grid) */
   --space-1: 4px;
   --space-2: 8px;
@@ -25,6 +34,7 @@
   --radius-card: 28px;
   --radius-button: 16px;
   --radius-chip: 8px;
+  --radius-sm: 4px;
 
   /* Touch targets */
   --hit-target-small: 44px;
