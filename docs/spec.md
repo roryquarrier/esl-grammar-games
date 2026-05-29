@@ -164,7 +164,8 @@ The core pedagogical insight: grammar practice is most effective in short, repea
 | SVG + Framer Motion discs with spring physics | ✓ | P1 | Medium | Framer Motion, SVG | To build |
 | Lottie animations for celebrations / special events | ✓ | P2 | Medium | lottie-web, assets | To build |
 | "67" easter egg detection + surprise | ✓ | P2 | Low | General easter egg framework | To build |
-| Teacher dashboard (class progress, per-student view) | ✗ | P0 | High | Progress data, Clerk | Post-MVP |
+| Teacher dashboard — **lite** | ✓ | P1 | Low | Teacher auth, progress table | To build (MVP) |
+| Teacher dashboard — full (heatmap, trends, exports) | ✗ | P0 | High | Lite dashboard | Post-MVP |
 | Online multiplayer (Supabase Realtime) | ✗ | P0 | High | Supabase Realtime | Post-MVP |
 | Question authoring UI for teachers | ✗ | P1 | High | Question bank admin | Post-MVP |
 | Weekly email digest to parents | ✗ | P1 | Medium | Progress data, email service | Post-MVP |
@@ -194,10 +195,11 @@ The Clerk-authenticated adult. One row per Clerk user.
 | `settings_json` | `jsonb` | yes | Locale, default book, preferences. |
 | `created_at` | `timestamptz` | no | Default `now()`. |
 | `updated_at` | `timestamptz` | no | Trigger-maintained. |
+| `deleted_at` | `timestamptz` | yes | Soft delete. 30-day grace → hard-wipe. |
 
-**RLS**: `SELECT/UPDATE WHERE auth.uid() = id`.
+**RLS**: `SELECT/UPDATE WHERE auth.uid() = id AND deleted_at IS NULL`. Teachers can soft-delete their own row (set `deleted_at`); the row is filtered out of queries by default. 30-day grace before hard-wipe via a scheduled job (post-MVP).
 
-**Indexes**: `teachers(email)` unique; `teachers(id)` PK.
+**Indexes**: `teachers(email)` unique (filtered by `deleted_at IS NULL`); `teachers(id)` PK.
 
 ---
 
@@ -215,11 +217,11 @@ Kid profile, teacher-managed. No Clerk account, no password, no email.
 | `pin_hash` | `text` | yes | Optional 4-digit PIN (SHA-256). |
 | `created_at` | `timestamptz` | no | |
 | `updated_at` | `timestamptz` | no | |
-| `deleted_at` | `timestamptz` | yes | Soft delete. |
+| `deleted_at` | `timestamptz` | yes | Soft delete. Teacher-facing undo + 30-day grace. |
 
-**RLS**: all `WHERE teacher_id = auth.uid()` (read, update, insert, delete). Students sign in via a signed JWT issued by the backend *after* the teacher's avatar tap; the JWT carries the student ID and lets them read/write their own progress and games. A separate `student_sessions` policy allows RLS by a `student_id` claim.
+**RLS**: all `WHERE teacher_id = auth.uid() AND deleted_at IS NULL` (read, update, insert, delete). Students sign in via a signed JWT issued by the backend *after* the teacher's avatar tap; the JWT carries the student ID and lets them read/write their own progress and games. A separate `student_sessions` policy allows RLS by a `student_id` claim. The JWT is short-lived (default 4 hours, configurable per teacher) and is scoped only to the student's `id` + `teacher_id` to prevent lateral access.
 
-**Indexes**: `students(teacher_id)`; `students(display_name, teacher_id)` (class-wide name uniqueness).
+**Indexes**: `students(teacher_id)` (with deleted_at filter); `students(display_name, teacher_id)` (class-wide name uniqueness).
 
 ---
 
@@ -247,8 +249,9 @@ Grammar questions. Seed bank + LLM-expanded variants.
 | `accuracy` | `numeric` | no | Rolling accuracy across all attempts. |
 | `created_at` | `timestamptz` | no | |
 | `published_at` | `timestamptz` | yes | When it became visible to students. |
+| `deleted_at` | `timestamptz` | yes | Soft delete (deprecation: bad question, outdated, etc.). |
 
-**RLS**: `SELECT WHERE validated = true AND published_at IS NOT NULL` (public for any authenticated teacher or student-session). Teacher-only `INSERT/UPDATE/DELETE WHERE ...` for curation post-MVP.
+**RLS**: `SELECT WHERE validated = true AND published_at IS NOT NULL AND deleted_at IS NULL` (public for any authenticated teacher or student-session). Teacher-only `INSERT/UPDATE/DELETE WHERE ...` for curation post-MVP.
 
 **Indexes**: `questions(book_level, topic, difficulty)` composite for adaptive selection; `questions(seed_id)` for variant lookups; `questions(validated, published_at)` for the published pool.
 
@@ -272,7 +275,7 @@ Every question shown to every student, answered or not.
 
 **RLS**: `INSERT/SELECT WHERE student_id = current_student()` (resolved from JWT).
 
-**Indexes**: `question_attempts(student_id, created_at)`; `question_attempts(question_id)` for aggregate accuracy.
+**Indexes**: `question_attempts(student_id, created_at)`; `question_attempts(question_id)` for aggregate accuracy; `question_attempts(student_id, question_id)` for per-question student performance (used by adaptive selector's cooldown check).
 
 ---
 
@@ -388,7 +391,7 @@ We reject pure-static (runs out, no adaptation) and pure-LLM-runtime (unpredicta
 
 - **Seed bank**: ~500 hand-curated questions per book. These are the quality anchor. Written by humans, reviewed by humans, validated forever.
 - **LLM expansion**: For each seed, an LLM call generates 10–20 variations *at authoring time* (not runtime), with a hard requirement that the semantic intent, grammar topic, difficulty, and correct answer remain constant.
-- **LLM runtime fallback**: Only used when the published pool is exhausted for a student's weak-topic bucket — typically on heavy usage days. Generated results are cached aggressively (48h TTL) and queued for human validation before being admitted to the permanent pool.
+- **LLM runtime fallback**: Only used when the published pool is exhausted for a student's weak-topic bucket — typically on heavy usage days. Generated results are cached aggressively (6h TTL) and queued for human validation before being admitted to the permanent pool.
 
 ### 5.2 Question schema
 
@@ -457,13 +460,15 @@ Constraints:
 Each request for a question, given `(student_id, book_level, topic_filter?)`:
 
 1. Read the student's `progress.topic_stats` and `progress.weak_topics`/`progress.strong_topics`.
-2. Roll a weighted bucket:
+2. **Cold-start rule**: if the student has fewer than 10 total attempts, skip the weighted bucket entirely — draw 100% from the mixed pool. Once ≥10 attempts exist, the 20/30/50 split kicks in.
+3. Roll a weighted bucket:
    - 20% chance → pick from `weak_topics` (topics with ≥3 attempts AND accuracy <50%)
    - 30% chance → pick from `strong_topics` (accuracy ≥80% with ≥5 attempts, to reinforce mastery)
    - 50% chance → pick from the mixed pool (any validated question at the book level, excluding recently-seen questions)
-3. Apply topic filter if the game has one.
-4. Exclude questions served in the last 5 attempts for this student (LRU cache of question IDs, kept client-side in Zustand, mirrored server-side in `question_attempts`).
-5. Return the question with the lowest `usage_count` among candidates of the chosen bucket (to balance exposure).
+4. Apply topic filter if the game has one.
+5. Exclude questions served in the last 5 attempts for this student (LRU cache of question IDs, kept client-side in Zustand, mirrored server-side in `question_attempts`).
+6. Return the question with the lowest `usage_count` among candidates of the chosen bucket (to balance exposure).
+7. **Pool exhaustion fallback**: if the chosen bucket has fewer than 3 candidates after filtering, widen to the full published pool at the requested `book_level`. If that is also near-exhausted (e.g. student has attempted >80% of published questions in their book level), call the runtime LLM fallback and cache the result for 6 hours (short TTL so validator-flagged questions age out fast).
 
 ### 5.5 Validation pipeline
 
@@ -502,7 +507,7 @@ Questions must clear ALL validators to set `validated = true` and be eligible fo
 **Server side**:
 - Supabase materialised view or precomputed result set for `(book_level, topic)` slices.
 - 5-minute TTL on the adaptive selector's candidate pool.
-- Runtime-LLM-fallback results have a 48h TTL keyed on `(student_id, topic)` to avoid re-generation for the same student-topic pair in a heavy-usage day.
+- Runtime-LLM-fallback results have a **6h TTL** keyed on `(student_id, topic)` to limit blast radius if a flawed question slips through validation. (No explicit "flag this question" button in MVP; post-MVP teachers can review flagged-question queues.)
 
 ### 5.7 Turn-flow integration
 
@@ -554,6 +559,673 @@ This data feeds:
 
 - Seed authoring: human time, not LLM cost.
 - LLM expansion: 500 seeds × 15 variations × 3 books = 22,500 generation calls + 22,500 validation calls. Using a cheap model (DeepSeek-V3 via SiliconFlow at ~$0.07/1M input, ~$0.28/1M output), one-shot cost is approximately **$3–5 total**.
-- LLM runtime fallback (cached 48h): at 1000 DAU and 5 games/day, ~2% cache miss rate → ~100 generation+validation calls/day → ~$0.10/day, **$3/month**.
+- LLM runtime fallback (cached 6h): at 1000 DAU and 5 games/day, ~2% cache miss rate → ~100 generation+validation calls/day → ~$0.10/day, **$3/month**.
 - Grammar validator re-checks: same cost order as expansion.
 - Total estimated burn at 1000 DAU: **under $10/month**, well within the budget constraint.
+
+---
+
+## 6. Component Tree
+
+The UI is composed of small, focused React components. Each component owns its own styles (`*.module.css`) and exposes a narrow props interface. Game logic lives in `src/game/` (pure functions). State lives in Zustand stores (see section 7).
+
+```
+<App>                                 // Root: routes + providers
+├── <ClerkProvider>                   // Teacher auth
+│   ├── <MuteProvider>                // localStorage-backed audio toggle
+│   └── <RouterProvider>
+│       └── routes:
+│           ├── /                     → <Landing>         (teacher: sign in)
+│           ├── /teacher/*            → <TeacherShell>    (auth-gated)
+│           │                           ├── /teacher/dashboard-lite   → <DashboardLite>
+│           │                           ├── /teacher/class/:id       → <ClassView>
+│           │                           └── /teacher/students/new    → <StudentOnboard>
+│           └── /play                 → <StudentShell>    (JWT-gated)
+│               ├── /play/lobby       → <Lobby>
+│               ├── /play/game/:id    → <GameScreen>
+│               └── /play/result/:id  → <GameResult>
+│
+├── <Landing>/<TeacherShell>/<StudentShell>
+│   └── <AppChrome>                   // fullscreen wrapper + mute button + settings
+│       ├── <MuteToggle/>             // 48px, always visible
+│       ├── <FullscreenButton/>       // Fullscreen API with Safari fallback
+│       └── {children}                // page content
+│
+├── <Lobby>                           // pre-game configuration
+│   ├── <BookSelector/>               // Red / Blue / Green
+│   ├── <TopicSelector/>              // "Mixed" or specific grammar topic
+│   ├── <ModeSelector/>               // Hotseat / vs AI / (online disabled in MVP)
+│   ├── <StudentAvatarPicker/>        // sign-in via avatar tap
+│   └── <StartButton/>                // M3 Expressive primary button
+│
+├── <GameScreen>                      // live game
+│   ├── <TurnIndicator/>              // whose turn, colour-coded (emerald / amber)
+│   ├── <Board/>                      // 7x6 Connect 4 grid
+│   │   └── <Cell/> × 42              // drop target, spring animation on fill
+│   ├── <DiscSprite/>                 // SVG (normal) or Lottie (celebration on win)
+│   ├── <QuestionModal/>              // gates player move
+│   │   ├── <QuestionStem/>
+│   │   ├── <OptionList/>             // 3–4 tappable options
+│   │   └── <FeedbackToast/>          // correct / wrong, with explanation
+│   └── <CooldownTimer/>              // 5s overlay after 3 wrong answers
+│
+├── <GameResult>                      // post-game screen
+│   ├── <WinnerBanner/>               // Lottie "confetti" for winner
+│   ├── <StatsCard/>                  // accuracy, questions answered, streaks
+│   ├── <WeakTopicHint/>              // "You picked 'goed' twice..."
+│   └── <PlayAgainButton/>
+│
+└── <DashboardLite>                   // MVP teacher view
+    ├── <StudentList/>
+    │   └── <StudentRow/> × N         // name | last seen | accuracy | top 3 weak
+    └── <ClassCodeDisplay/>           // code students type to join
+```
+
+### Key design decisions
+
+- **`<AppChrome>`** is a single wrapper used by every page so the mute toggle + fullscreen button are guaranteed present.
+- **`<DiscSprite>`** is polymorphic: default SVG (Framer Motion spring-in), swaps to Lottie JSON when the disc is part of a winning line or celebrating the "67" easter egg.
+- **`<QuestionModal>`** is a dialog (`role="dialog"`, `aria-modal`) that blocks board interaction until the question is answered. It is accessible via keyboard (tab through options, Enter to select).
+- **`<CooldownTimer>`** is a purely visual 5-second overlay with a hidden `aria-live="polite"` region announcing the remaining time for screen readers.
+
+### Routes & auth gates
+
+- `/` is public; anyone can view the landing.
+- `/teacher/*` is gated by Clerk authentication. Redirects to `/` with a sign-in modal if no session.
+- `/play/*` is gated by a short-lived student JWT stored in `sessionStorage`. If missing or expired, redirects to `/play/sign-in` (avatar picker, requires a class code).
+
+---
+
+## 7. State Management (Zustand Store Shape)
+
+State is split into four Zustand stores, each owning a single slice of concern. Each store is small (≤200 LOC) and composable. Persistence is only on the stores that benefit from it.
+
+### `useAuthStore` — auth state
+
+No persistence. Holds the current teacher or student session.
+
+```ts
+interface AuthStore {
+  mode: 'teacher' | 'student' | 'unauthed';
+  teacher: { id: string; email: string; displayName: string } | null;
+  studentSession: {
+    id: string;
+    displayName: string;
+    avatarKey: string;
+    bookLevel: 'red' | 'blue' | 'green';
+    jwtExpiresAt: number;
+  } | null;
+  signOut: () => void;
+  refreshStudentJwt: () => Promise<void>;
+}
+```
+
+### `useGameStore` — current game state
+
+Not persisted (resets per game). Derives board state from `moves`.
+
+```ts
+interface GameStore {
+  game: {
+    id: string;
+    mode: 'hotseat' | 'vs_ai';
+    bookLevel: BookLevel;
+    topicFilter: string[] | null;
+    players: [PlayerInfo, PlayerInfo];
+    currentTurn: 1 | 2;
+    winner: 0 | 1 | 2 | null;        // 0 = draw
+    moves: GameMove[];
+  } | null;
+
+  // turn flow sub-state
+  questionState: {
+    question: Question | null;
+    wrongInRow: 0 | 1 | 2 | 3;
+    cooldownUntil: number | null;     // epoch ms
+    isFetching: boolean;
+  };
+
+  // actions
+  startGame: (opts: StartGameOptions) => Promise<void>;
+  selectColumn: (col: number) => Promise<void>;           // triggers question fetch
+  answerQuestion: (chosenIndex: number) => Promise<void>; // validates + advances turn
+}
+```
+
+### `useSettingsStore` — persisted user preferences
+
+Persisted to `localStorage` via `zustand/middleware/persist`. Survives sign-out.
+
+```ts
+interface SettingsStore {
+  muted: boolean;
+  fullscreenEnabled: boolean;
+  dyslexiaFont: boolean;             // post-MVP, but shape is here
+  setMuted: (v: boolean) => void;
+  setFullscreen: (v: boolean) => void;
+}
+```
+
+### `useQuestionCacheStore` — client-side question cache
+
+Not persisted. LRU cache of the last 20 question IDs per book level to prevent serving the same question back-to-back.
+
+```ts
+interface QuestionCacheStore {
+  recentlySeen: Record<BookLevel, string[]>;            // LRU, max 20 per book
+  markSeen: (bookLevel: BookLevel, questionId: string) => void;
+  clear: () => void;                                     // on sign-out
+}
+```
+
+### Boundaries with Supabase
+
+- **Read**: Supabase client via an SDK wrapper in `src/lib/api/`. Every store action that needs remote data calls into this wrapper, not Supabase directly.
+- **Write**: Only `useGameStore` and `useAuthStore` perform writes. The others are pure client-side state.
+- **Realtime** (post-MVP): Supabase Realtime subscriptions will live in `src/lib/realtime.ts` and will update `useGameStore` when remote board changes arrive. Not wired in MVP.
+
+---
+
+## 8. Animation Strategy
+
+### SVG vs Lottie decision tree
+
+Every animated element in the app is classified by complexity:
+
+| Element | Complexity | Approach | Why |
+|---|---|---|---|
+| Disc placement (drop into column) | Low — translation + bounce | **SVG + Framer Motion** | Vector, palette-themeable, trivial |
+| Disc hover state | Low — scale + hue shift | **SVG + CSS** | CSS :hover handles it |
+| Column highlight on hover | Low — translucent fill | **SVG + CSS** | — |
+| Winning line (4-in-a-row glow) | Medium — pulse + trail | **SVG + Framer Motion** | AnimateMotion for the glow line |
+| Wrong-answer shake on modal | Low — translate wiggle | **CSS keyframes** | No state needed |
+| Correct-answer "pop" | Low — scale bounce | **Framer Motion** | Spring config |
+| Win celebration (confetti) | High — 50+ particles, varied timing | **Lottie** | After Effects authored; tiny JSON |
+| "67" easter egg reveal | High — multi-stage, bespoke | **Lottie** | Bespoke art, not worth coding |
+| Lobby "book cards" hover | Low — scale + shadow | **Framer Motion** | — |
+
+**Rule of thumb**: if the animation is "spring a single property," use Framer Motion. If it's "many elements with authored timing," use Lottie. CSS for anything achievable without JS.
+
+### Spring physics (Framer Motion)
+
+M3 Expressive defines three curves; we use two:
+
+```ts
+// Emphasized decelerate — for entry animations (discs dropping, modals appearing).
+// "Arrives with a little extra bounce."
+export const emphasizedDecelerate = {
+  type: 'spring',
+  stiffness: 200,
+  damping: 20,
+  mass: 0.9,
+};
+
+// Standard decelerate — for interactive feedback (button presses, toasts).
+// "Quiet and quick."
+export const standardDecelerate = {
+  type: 'spring',
+  stiffness: 400,
+  damping: 30,
+  mass: 0.7,
+};
+```
+
+These are exposed as CSS vars too (`--spring-emphasized`, `--spring-standard`) for the rare case where CSS transitions need the same timing (e.g. hover state on a disc).
+
+### Squircle corners
+
+M3 Expressive uses "squircle" (continuous curvature) corners rather than circular arcs. We approximate via CSS:
+
+```css
+.squircle {
+  border-radius: 28px;
+  border-radius: round(50px, 20px);  /* Progressive enhancement for browsers that support it */
+}
+```
+
+Squircle radii: 28px for cards, 16px for buttons, 8px for small chips. Discs stay circular (radius 50%).
+
+### Lottie assets
+
+Sourced from [lottiefiles.com](https://lottiefiles.com) (MIT-licensed) or commissioned per asset. Each asset must be under 80 KB gzipped and must respect the palette by overriding colours at runtime via `lottie-react`'s `colorFilters` or a palette-remap pass on the JSON.
+
+---
+
+## 9. Responsive Layout Strategy
+
+### Breakpoints
+
+Five breakpoints, named after the dominant device:
+
+| Name | Min-width | Height strategy | Typical device |
+|---|---|---|---|
+| `mobile-portrait` | — | `100dvh` | Phone, portrait |
+| `mobile-landscape` | 640px | `100dvh` | Phone, landscape |
+| `ipad-portrait` | 768px | `100dvh` | iPad portrait |
+| `ipad-landscape` | 1024px | `100dvh` | **iPad landscape — primary layout** |
+| `desktop` | 1280px | `100vh` | Monitor / laptop |
+
+iPad landscape (1024px+) is the **primary** design. We design it first and adapt the others from it, not the other way around.
+
+### CSS Grid with named areas
+
+Each page template uses Grid named areas that re-arrange per breakpoint:
+
+```css
+/* ipad-landscape (primary) */
+@media (min-width: 1024px) {
+  .game {
+    display: grid;
+    grid-template-areas:
+      "header header"
+      "board sidebar"
+      "footer footer";
+    grid-template-columns: 2fr 1fr;
+    grid-template-rows: auto 1fr auto;
+    height: 100dvh;
+  }
+}
+
+/* mobile-portrait */
+@media (max-width: 639px) {
+  .game {
+    grid-template-areas:
+      "header"
+      "board"
+      "sidebar"
+      "footer";
+    grid-template-columns: 1fr;
+  }
+}
+```
+
+### Layout priorities per breakpoint
+
+- **iPad landscape** (primary): Board takes ~60% width, sidebar (scoreboard + turn info) takes ~40%. Side-by-side.
+- **iPad portrait**: Board takes full width with a sticky header. Sidebar slides in as a bottom drawer (touch-draggable, M3 bottom sheet).
+- **Mobile landscape**: Board fills height; sidebar is a compact strip on the right.
+- **Mobile portrait**: Board on top, sidebar below, full-screen modal for questions.
+- **Desktop**: Same as iPad landscape but capped at 1200px max-width, centered.
+
+### Dynamic viewport units
+
+We use `dvh` instead of `vh` everywhere to handle mobile Safari's address-bar bounce. `100dvh` = full visible viewport. This matters especially for fullscreen mode on iPad.
+
+### Touch vs mouse
+
+`@media (pointer: coarse)` applies larger hit targets (≥ 60px for young learners). `@media (pointer: fine)` enables hover states and smaller targets for desktop.
+
+### Fullscreen mode
+
+The `<FullscreenButton>` triggers the Fullscreen API. Safari on iPad has historically been flaky with Fullscreen; fallback is a "kiosk-style" CSS mode that hides the page chrome and uses `100dvh` + `overscroll-behavior: none`.
+
+```ts
+async function requestFullscreen(el: HTMLElement) {
+  if (el.requestFullscreen) return el.requestFullscreen();
+  if ((el as any).webkitRequestFullscreen) return (el as any).webkitRequestFullscreen();
+  // Fallback: toggle .kiosk class on <body>
+  document.body.classList.add('kiosk');
+}
+```
+
+---
+
+## 10. Accessibility Requirements
+
+Target: **WCAG 2.1 AA** across the entire app. See `references/accessibility-checklist.md` for the full checklist.
+
+### Colour contrast
+
+- Primary text (`#121212` on `#def3e4` background): contrast ratio **16.3:1** — AAA.
+- Primary action (`#28ba72` on `#121212`): contrast ratio **8.2:1** — AAA.
+- Player-2 amber disks (`#f5a623` on `#22613e` board): contrast ratio **6.4:1** — AAA.
+- All interactive elements must maintain ≥ 4.5:1 against their background at every breakpoint.
+
+### Not-colour-alone signals
+
+- Player 1 discs are emerald; player 2 discs are amber. But player state is *also* indicated by a pulsing ring around the currently-active player name (not colour-only).
+- Winning line is highlighted by a pulsing stroke (not just colour) and announced to screen readers.
+- Turn indicator shows both a colour dot AND the player's name ("Amber's turn").
+
+### Keyboard navigation
+
+- Every interactive element reachable via Tab / Shift+Tab.
+- Board columns navigable with ← → arrow keys (standard grid pattern). Space/Enter selects a column.
+- Question modal: Tab cycles through options; Enter confirms. Focus is trapped inside the modal while open.
+- Post-MVP: "Skip to main content" link in `<AppChrome>`.
+
+### Screen readers
+
+- `<QuestionStem>` uses `<h2>` with `aria-live="polite"` so the question is announced when displayed.
+- Board state is announced via a visually-hidden `<div role="status">` updated after each move: "Emerald placed in column 3, row 4".
+- Win is announced: "Amber wins with four in a row horizontally on row 2".
+
+### Cognitive accessibility
+
+- Question text uses `clamp(1rem, 2.5vw, 1.5rem)` so it scales smoothly.
+- No time pressure for grammar questions: students can take as long as they like.
+- 5-second cooldown after 3 wrong answers gives a visible breathing space and is announced.
+- Error messages include the explanation ("Remember: 'go' becomes 'went'") rather than "Wrong."
+- Post-MVP: dyslexia-friendly font toggle (font stack includes OpenDyslexic / Atkinson Hyperlegible).
+
+### Touch targets
+
+- **MVP requirement**: 60 × 60 px for question options (young learners, imprecise tapping).
+- Board cells: min 44 × 44 px; preferred 60 × 60 when space allows.
+- Mute toggle: fixed at 48 × 48 px.
+
+### Reduced motion
+
+`@media (prefers-reduced-motion: reduce)` swaps all spring animations for instant transitions and disables Lottie celebrations entirely (they render their first frame statically).
+
+---
+
+## 11. Security & Privacy
+
+### Threat model
+
+- A student should never see or modify another student's data, even within the same teacher's account, except in the context of an active game (where they see only the shared `games` and `game_moves` rows for that game).
+- A teacher should never see another teacher's students, attempts, or games.
+- A student should never be able to escalate to teacher privileges.
+- LLM-generated questions that fail validation must never be served.
+
+### Auth boundaries
+
+- **Teachers**: Clerk-issued session tokens. Server-side verification via Clerk webhook + session secret. No role escalation possible (no "admin" role exists).
+- **Students**: Short-lived (4h default) JWTs signed by our backend with a rotating secret (daily rotation via cron). JWT payload = `{ studentId, teacherId, bookLevel, issuedAt, expiresAt }`. Server-side verification on every request.
+- **JWT revocation**: a `student_sessions` table tracks issued JWTs; a revoked JWT (teacher deletes the student, or explicitly revokes the session) is rejected.
+
+### RLS recap
+
+Summarised in section 4. All writes and most reads require a matching `teacher_id = auth.uid()` or `current_student()`. No cross-teacher access is possible at the RLS layer; the application layer also checks, defence in depth.
+
+### Kid PII
+
+- `students.display_name` is first-name only, capped at 32 chars. No last name, no DOB, no email.
+- `students.avatar_key` is a bundled set — no user uploads (eliminates inappropriate-image vector).
+- No IP logging of student sessions at the application layer (Supabase Postgres logs only, rotated at 30 days by Supabase Cloud defaults).
+- Observers (parents) receive a signed, expiring link (7-day TTL) to a read-only progress page. The link is derived from a one-time token; once opened, a new one must be issued.
+
+### COPPA and HK PDPO
+
+- **COPPA (US)**: Students have no account, no email, and the product is only used under teacher supervision. No direct contract with the child.
+- **HK PDPO**: Students are identified to a single teacher by first name only. The teacher is the data controller; the product is a data processor (documented in Terms of Service + DPA with each teacher).
+- **Right to erasure**: soft-delete on `students` + 30-day grace before hard-wipe, with all FK-cascading aggregates (game_moves, question_attempts) deleted too.
+
+### Secrets management
+
+- Clerk secret, Supabase service-role key, SiliconFlow API key (for server-side LLM expansion): stored in GitHub Secrets for CI/CD, Supabase Secrets for runtime.
+- **No secrets in code**, ever. All API calls to LLM services are routed through a Supabase Edge Function (`question-generate`), never from the client.
+- `.env` is in `.gitignore`. Dev uses `.env.local` which is also gitignored.
+
+### Input validation
+
+All user-input strings (display_name, topic_filter, etc.) are validated by Zod at the API boundary and by CHECK constraints in Postgres. XSS risk is nil: React auto-escapes all rendered strings; no `dangerouslySetInnerHTML` allowed by ESLint config.
+
+### Supply-chain
+
+- `npm audit` runs on every PR; CI fails on high or critical (unless an override is documented).
+- Pin major versions in `package.json` for transitive deps with known security history (currently no such deps, but future additions should be pinned).
+
+---
+
+## 12. API Contracts
+
+### Module boundaries
+
+The codebase is organised as a set of isolated modules. Each module exposes a narrow API (TypeScript types); cross-module calls go only through these exports.
+
+```
+src/
+├── api/              ← Supabase client wrapper (public: fetchQuestion, recordAttempt, etc.)
+├── auth/             ← Clerk + student JWT helpers (public: signIn, signOut, refreshJwt)
+├── game/             ← Pure game logic (public: makeMove, detectWin, aiTurn)
+├── questions/        ← Question system (public: fetchNextQuestion, validateQuestion)
+├── questions/admin/  ← Question authoring APIs (post-MVP)
+├── ui/               ← React components (see §6)
+└── styles/           ← Design tokens (see Appendix A)
+```
+
+### Key contracts
+
+#### `src/api/questions.ts`
+
+```ts
+export interface FetchQuestionOpts {
+  studentId: string;
+  bookLevel: BookLevel;
+  topicFilter?: string[];
+  excludeQuestionIds?: string[];   // client-side LRU
+}
+
+export async function fetchQuestion(opts: FetchQuestionOpts): Promise<Payload<Question>>;
+export async function recordAttempt(a: AttemptInput): Promise<Payload<GameMove>>;
+```
+
+Errors: `Payload<T> = { ok: true; data: T } | { ok: false; error: KnownError }`. Network errors are wrapped in `NetworkError` for offline handling; validation errors carry a structured `code`.
+
+#### `src/game/board.ts`
+
+```ts
+export type Board = number[][];                       // 6 rows × 7 cols
+export type Player = 1 | 2;
+
+export function emptyBoard(): Board;
+export function dropDisc(board: Board, player: Player, column: number): Board | null;  // null = column full
+export function detectWin(board: Board): { winner: 0 | 1 | 2; line: [number, number][] | null };
+```
+
+Pure, deterministic, fully unit-tested. Board is immutable — every drop returns a new Board.
+
+#### `src/questions/select.ts`
+
+```ts
+export function pickQuestion(ctx: SelectContext): PickedQuestion;
+// pure; uses ctx.progress + ctx.pool + ctx.coldStart rule
+```
+
+### Error semantics
+
+Every API export returns a `Payload<T>` discriminated union. Components never throw; they handle the `ok: false` branch with a `<ErrorToast>`.
+
+### Versioning
+
+Single API version for MVP (`v1`). When breaking changes are required, we add `v2` endpoints alongside `v1` and migrate consumers; no silent breakage.
+
+---
+
+## 13. Testing Strategy
+
+See `references/testing-patterns.md` for full patterns.
+
+### Test pyramid
+
+- **80% unit tests** (`vitest`): game logic, question selector, state stores, API wrappers, helpers.
+- **15% component tests** (`@testing-library/react`): `<QuestionModal>`, `<Board>`, `<DiscSprite>` (interaction + accessibility), turn flow with mocked Supabase.
+- **5% end-to-end** (`playwright`): smoke tests for sign-in, create-student, complete-a-game, view-dashboard.
+
+### Coverage targets
+
+- `src/game/`: 100% branch coverage (win detection is life-or-death).
+- `src/questions/`: ≥ 95% line coverage; 100% on the adaptive selection algorithm (it's a critical path).
+- `src/api/`: ≥ 80% line coverage.
+- `src/ui/`: Component-library coverage ≥ 60%.
+
+### Mocking strategy
+
+- Supabase: use `msw` (Mock Service Worker) at the component-test boundary. Real Supabase calls in playwright E2E only (against a seeded test DB).
+- Clerk: mock the session object; real Clerk only in E2E.
+- LLM calls: always mocked in tests; no network calls to SiliconFlow during CI.
+
+### Browser testing
+
+Playwright against the four browsers that matter:
+- Safari on iPad (primary)
+- Chrome on iPad
+- Safari on macOS
+- Chrome on macOS
+
+Matrix runs on every merge to `main`.
+
+### Accessibility testing
+
+- `axe-core` + `@axe-core/playwright` on every page; CI fails on new issues.
+- Manual keyboard navigation pass before each milestone.
+
+---
+
+## 14. Performance Targets
+
+### Core Web Vitals (GitHub Pages deployment)
+
+| Metric | Target | Measured by |
+|---|---|---|
+| LCP | ≤ 2.0s on 4G | Lighthouse CI |
+| FID / INP | ≤ 100ms | Lighthouse CI |
+| CLS | ≤ 0.05 | Lighthouse CI |
+| Lighthouse Performance score | ≥ 90 | CI, every merge to main |
+
+### Bundle budget
+
+- Initial JS (gzipped): ≤ 180 KB
+- Lottie JSON files (gzipped): ≤ 20 KB each, total ≤ 150 KB across app
+- CSS (gzipped): ≤ 15 KB
+
+Enforced by `bundlesize` in CI. Any PR that exceeds the budget fails and requires either code reduction or a documented override.
+
+### Interaction latency
+
+- Disc-drop animation start: ≤ 50ms from tap (Framer Motion spring config, no JS blocking).
+- Question-modal appearance: ≤ 200ms including network fetch (cached in client).
+- Move submission round-trip: ≤ 500ms on 4G (optimistic UI with Supabase rollback on failure).
+
+### Offline resilience
+
+- Game state (board, moves, current question) is persisted to IndexedDB via `idb-keyval`. Brief Wi-Fi drops during a school day do not lose progress.
+- On reconnect, a queued `recordAttempt` flushes automatically.
+- No offline support for teacher dashboard in MVP; it requires Supabase auth each load. Post-MVP: a service-worker precached shell.
+
+---
+
+## 15. Open Questions / Decisions Needed
+
+### Resolved this document
+
+- ✅ Hybrid question system (seed + LLM expansion + validation)
+- ✅ Teacher-managed auth with student JWT
+- ✅ Amber player-2 discs (breaks monochrome only for legibility)
+- ✅ MVP scope including teacher dashboard-lite
+- ✅ 6h runtime LLM cache TTL
+- ✅ Observer persona stays read-only in MVP; email-digest post-MVP
+
+### Open — requires further input
+
+1. **The "67" easter egg** — what is the actual surprise? Options:
+   - (a) Special Lottie animation (retro arcade "67" splash)
+   - (b) Unlockable avatar skin
+   - (c) A hidden grammar lesson with a joke on the number 67
+   - *Decision owner*: Rory
+   - *Deadline*: before implementing `<EasterEgg>` component
+
+2. **Grammar topic taxonomy source** — use Cambridge's published topic list verbatim (risk: copyright, may need a licence), or author our own taxonomy that *aligns* with Cambridge but is our own wording?
+   - *Decision owner*: Rory + education advisor (if any)
+   - *Deadline*: before seed authoring begins
+
+3. **Supabase project region** — Singapore (`ap-southeast-1`) is closest to Hong Kong; verify against the chosen plan tier and PDPO data-residency requirements.
+   - *Decision owner*: Rory
+
+4. **Clerk plan tier** — free tier is sufficient for MVP (<10k MAU); if we expect >10k students in first 12 months, evaluate the paid plan before public launch.
+   - *Decision owner*: Rory
+
+5. **Lottie asset sourcing** — commission bespoke vs. licence from lottiefiles. Commissioned is more branded; licensed is faster. Budget TBD.
+   - *Decision owner*: Rory
+
+6. **AI opponent difficulty** — MVP specifies "deterministic heuristic". Do we want a minimax with depth-3 lookahead (stronger, but slower on big boards) or a rule-based play-to-block + prefer-centre approach (weaker, but fast and predictable)?
+   - *Decision owner*: foreman (decide during build phase 5.2); easy to swap if wrong
+
+---
+
+## Appendix A: Design Tokens
+
+```css
+:root {
+  /* Colour */
+  --color-forest: #22613e;        /* board bg, deep surfaces */
+  --color-emerald: #28ba72;       /* primary action, player 1 discs */
+  --color-mint: #99dbb0;          /* secondary UI, hover states */
+  --color-sage: #def3e4;          /* background, player 2 discs light surfaces */
+  --color-night: #121212;         /* main text, outlines, dark bg */
+  --color-amber: #f5a623;         /* player 2 discs (breaks palette) */
+
+  /* Spacing (4px grid) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Squircle radii */
+  --radius-card: 28px;
+  --radius-button: 16px;
+  --radius-chip: 8px;
+
+  /* Motion */
+  --spring-emphasized: cubic-bezier(0.05, 0.7, 0.2, 1);
+  --spring-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  /* Touch targets */
+  --hit-target-small: 44px;     /* desktop / fine pointer */
+  --hit-target-large: 60px;     /* iPad / coarse pointer */
+  --hit-target-mute: 48px;     /* mute button (constant) */
+}
+```
+
+## Appendix B: Grammar Question Examples
+
+<!-- TO BE FILLED after seed authoring phase: 6-8 examples per book level with distractor rationale -->
+
+## Appendix C: Soft-Delete & CASCADE Policy
+
+### Soft-delete scope
+
+| Table | Has `deleted_at`? | Rationale |
+|---|---|---|
+| `teachers` | ✅ | SaaS off-boarding grace (30-day) |
+| `students` | ✅ | Teacher undo for accidental delete |
+| `questions` | ✅ | Deprecate bad questions without orphaning history |
+| `question_attempts` | ❌ | Aggregate data; cascade-deleted when student is hard-deleted |
+| `games` | ❌ | Same as attempts |
+| `game_moves` | ❌ | Same as attempts |
+| `progress` | ❌ | Recomputed from attempts; cascade-deleted with student |
+
+### CASCADE behaviour
+
+| FK | ON DELETE | Rationale |
+|---|---|---|
+| `students.teacher_id` → `teachers(id)` | `CASCADE` | Teacher gone = students gone |
+| `questions.seed_id` → `questions(id)` (self) | `SET NULL` | Seed deprecated; variants can live independently as seeds |
+| `question_attempts.student_id` → `students(id)` | `CASCADE` | Student hard-deleted = attempts wiped |
+| `question_attempts.question_id` → `questions(id)` | `CASCADE` | Question hard-deleted = historical attempts wiped (soft-deleted questions keep their attempts) |
+| `games.player1_id` / `player2_id` → `students(id)` | `SET NULL` | Student gone, game history preserved as anonymous aggregate |
+| `game_moves.game_id` → `games(id)` | `CASCADE` | Game gone = moves gone |
+| `progress.student_id` → `students(id)` | `CASCADE` | Derived data; recomputable but we just drop |
+
+## Appendix D: Easter Egg Specification
+
+The "67" easter egg detection framework MUST exist in MVP. The specific surprise is an open question (see §15). Detection hook:
+
+```ts
+function shouldTriggerEasterEgg(ctx: {
+  totalMovesInGame: number;
+  totalCorrectAnswers: number;
+  currentStreak: number;
+}): boolean {
+  return [ctx.totalMovesInGame, ctx.totalCorrectAnswers, ctx.currentStreak].includes(67);
+}
+```
+
+On trigger: replace the normal win/move animation with the easter-egg Lottie JSON (or placeholder if surprise is TBD), play a one-time chime (respects mute), and log a `easter_egg_events` row for analytics (post-MVP schema).
+
