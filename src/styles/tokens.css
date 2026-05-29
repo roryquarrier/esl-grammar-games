@@ -36,4 +36,8 @@
   --cell-size: 72px;
   --spacing-md: 16px;
   --radius-lg: 24px;
+
+  /* Durations */
+  --duration-fast: 150ms;
+  --duration-normal: 300ms;
 }

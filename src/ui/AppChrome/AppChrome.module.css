@@ -1,0 +1,44 @@
+.shell {
+  min-height: 100vh;
+  background: var(--night-0);
+  color: var(--sage-0);
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  padding: var(--space-4) var(--space-6);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--forest-2);
+}
+
+.title {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--emerald-3);
+  margin: 0;
+}
+
+.main {
+  flex: 1;
+  padding: var(--space-6);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Tablet */
+@media (min-width: 768px) {
+  .header {
+    padding: var(--space-6) var(--space-8);
+  }
+}
+
+/* Desktop */
+@media (min-width: 1024px) {
+  .title {
+    font-size: 32px;
+  }
+}
