@@ -11,7 +11,7 @@ const MAX_WRONG_ATTEMPTS = 3;
 const COOLDOWN_MS = 5000;
 
 export function GameScreen() {
-  const { board, currentPlayer, status, winner, makeMove } = useGameStore();
+  const { board, currentPlayer, status, winner, dropPiece } = useGameStore();
 
   const [phase, setPhase] = useState<GamePhase>('idle');
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
@@ -41,7 +41,7 @@ export function GameScreen() {
     if (!pendingColumn) return;
 
     if (isCorrect) {
-      makeMove(pendingColumn);
+      dropPiece(pendingColumn);
       resetTurn();
       return;
     }
