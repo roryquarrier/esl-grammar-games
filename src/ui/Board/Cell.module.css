@@ -7,7 +7,6 @@
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
   background: transparent;
   position: relative;
-  overflow: hidden;
 }
 
 .cell:hover {
@@ -26,16 +25,15 @@
   background: rgba(255, 215, 0, 0.1);
 }
 
-/* ─── Disc element (real DOM, not pseudo) ────────────── */
+/* ─── Disc element ────────────── */
 
 .disc {
   width: 70%;
   height: 70%;
   border-radius: 50%;
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  top: 15%;
+  left: 15%;
 }
 
 .discEmpty {

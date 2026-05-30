@@ -7,7 +7,6 @@
   border-radius: var(--radius-lg);
   outline: none;
   width: fit-content;
-  overflow: hidden;
 }
 
 .row {

@@ -33,17 +33,14 @@ describe('Board', () => {
     expect(screen.getAllByLabelText(/amber disc/i)).toHaveLength(2);
   });
 
-  it('makes first column focusable by default', () => {
+  it('no column focused by default (mouse users)', () => {
     const board = createEmptyBoard();
     render(<Board board={board} onClick={() => {}} />);
 
     const cells = screen.getAllByRole('gridcell');
     
-    // First cell (top of column 0) should be focusable (tabIndex="0")
-    expect(cells[0]).toHaveAttribute('tabIndex', '0');
-
-    // All other cells should not be focusable (tabIndex="-1")
-    for (let i = 1; i < cells.length; i++) {
+    // All cells should have tabIndex -1 by default (no keyboard focus)
+    for (let i = 0; i < cells.length; i++) {
       expect(cells[i]).toHaveAttribute('tabIndex', '-1');
     }
   });
@@ -83,15 +80,22 @@ describe('Board', () => {
     const boardElement = screen.getByRole('grid');
     const cells = screen.getAllByRole('gridcell');
 
-    // Initially, first column is focused
-    expect(cells[0]).toHaveAttribute('tabIndex', '0');
+    // Initially, no column is focused
+    expect(cells[0]).toHaveAttribute('tabIndex', '-1');
 
-    // Press ArrowRight using fireEvent (triggers React synthetic events)
+    // Press ArrowRight — should focus column 0 (first keypress sets focus)
     act(() => {
       fireEvent.keyDown(boardElement, { key: 'ArrowRight' });
     });
     
-    // Now second column should be focused (cell at index 1 is top of column 1 in row-major order)
+    // Column 0 should now be focused (focusedColumn starts at -1, ArrowRight moves to 0)
+    expect(cells[0]).toHaveAttribute('tabIndex', '0');
+
+    // Press ArrowRight again — should move to column 1
+    act(() => {
+      fireEvent.keyDown(boardElement, { key: 'ArrowRight' });
+    });
+    
     expect(cells[1]).toHaveAttribute('tabIndex', '0');
     expect(cells[0]).toHaveAttribute('tabIndex', '-1');
   });
@@ -111,7 +115,7 @@ describe('Board', () => {
     expect(screen.getByLabelText(/Row 6, column 1: amber disc/i)).toBeInTheDocument();
   });
 
-  it('supports Space and Enter to drop piece', () => {
+  it('supports Space and Enter to drop piece after keyboard focus', () => {
     const board = createEmptyBoard();
     let clickedCol = -1;
 
@@ -119,8 +123,15 @@ describe('Board', () => {
 
     const boardElement = screen.getByRole('grid');
 
+    // Press ArrowRight to establish keyboard focus on column 0
+    act(() => {
+      fireEvent.keyDown(boardElement, { key: 'ArrowRight' });
+    });
+
     // Press Space to drop piece in column 0
-    boardElement.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+    act(() => {
+      fireEvent.keyDown(boardElement, { key: ' ' });
+    });
     expect(clickedCol).toBe(0);
   });
 });

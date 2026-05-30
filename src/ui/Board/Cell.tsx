@@ -43,21 +43,6 @@ export const Cell = forwardRef<HTMLDivElement, CellProps>(
       isColumnFocused ? styles.columnFocused : '',
     ].filter(Boolean).join(' ');
 
-    // Disc drop animation: only animate newly placed discs
-    const discVariants = {
-      initial: { y: -(row + 1) * 80, opacity: 0.8 },
-      animate: {
-        y: 0,
-        opacity: 1,
-        transition: {
-          type: 'spring' as const,
-          damping: 12,
-          stiffness: 200,
-          mass: 0.8,
-        },
-      },
-    };
-
     return (
       <div
         ref={ref}
@@ -72,9 +57,9 @@ export const Cell = forwardRef<HTMLDivElement, CellProps>(
         {value !== 0 && (
           <motion.div
             className={`${styles.disc} ${getDiscClass()}`}
-            variants={discVariants}
-            initial={isLastMove ? 'initial' : false}
-            animate="animate"
+            initial={isLastMove ? { scale: 0, opacity: 0 } : false}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: 'spring', damping: 15, stiffness: 300 }}
             key={`disc-${row}-${col}-${value}`}
           />
         )}

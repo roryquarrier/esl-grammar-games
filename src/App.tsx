@@ -67,7 +67,7 @@ function App() {
         <AppChrome>
           {route === 'game' && <GameScreen />}
           {route === 'dashboard' && <DashboardLite />}
-          <nav style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginTop: '1rem' }}>
+          <nav className="appNav">
             <button onClick={() => setRoute('game')}>Game</button>
             <button onClick={() => setRoute('dashboard')}>Dashboard</button>
           </nav>
@@ -80,7 +80,7 @@ function App() {
         ) : studentSession ? (
           <AppChrome>
             <GameScreen />
-            <nav style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginTop: '1rem' }}>
+            <nav className="appNav">
               <button onClick={handleSwitchStudent}>Switch Student</button>
               <button onClick={() => setRoute('sign-in')}>Sign In</button>
             </nav>

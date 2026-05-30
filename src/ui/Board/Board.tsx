@@ -10,7 +10,7 @@ interface BoardProps {
 }
 
 export function Board({ board, onClick, lastMove }: BoardProps) {
-  const [focusedColumn, setFocusedColumn] = useState(0);
+  const [focusedColumn, setFocusedColumn] = useState(-1);
   const cellRefs = useRef<(HTMLDivElement | null)[][]>(
     Array.from({ length: 6 }, () => Array(7).fill(null))
   );
