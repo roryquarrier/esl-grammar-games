@@ -55,6 +55,20 @@ describe('GameScreen', () => {
     expect(screen.getByText(/vs Computer/)).toBeInTheDocument();
   });
 
+  it('mode selector has role group and proper aria-label', () => {
+    render(<GameScreen />);
+    const group = screen.getByRole('group');
+    expect(group).toHaveAttribute('aria-label', 'Game mode');
+  });
+
+  it('active mode button has aria-pressed true', () => {
+    render(<GameScreen />);
+    const pvpBtn = screen.getByText(/2 Players/);
+    const pveBtn = screen.getByText(/vs Computer/);
+    expect(pvpBtn).toHaveAttribute('aria-pressed', 'true');
+    expect(pveBtn).toHaveAttribute('aria-pressed', 'false');
+  });
+
   it('clicking vs Computer sets game mode to pve', () => {
     render(<GameScreen />);
     fireEvent.click(screen.getByText(/vs Computer/));

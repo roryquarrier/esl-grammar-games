@@ -32,7 +32,7 @@ export function MoveHistory({ moves, gameMode }: MoveHistoryProps) {
   return (
     <div className={styles.container}>
       <h3 className={styles.title}>Move Log</h3>
-      <div className={styles.scrollArea} ref={scrollRef}>
+      <div className={styles.scrollArea} ref={scrollRef} role="log" aria-label="Move history" aria-live="polite">
         {moves.map((move) => (
           <motion.div
             key={move.moveNumber}
@@ -40,6 +40,7 @@ export function MoveHistory({ moves, gameMode }: MoveHistoryProps) {
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.2 }}
+            aria-label={`Move ${move.moveNumber}: Player ${move.player} placed in column ${COLUMN_LABELS[move.col]}`}
           >
             <span className={styles.moveNum}>#{move.moveNumber}</span>
             <span

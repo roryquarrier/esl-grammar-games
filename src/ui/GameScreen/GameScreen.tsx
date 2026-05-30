@@ -104,16 +104,18 @@ export function GameScreen() {
   return (
     <div className={styles.container}>
       {/* Mode selector */}
-      <div className={styles.modeSelector}>
+      <div className={styles.modeSelector} role="group" aria-label="Game mode">
         <button
           className={`${styles.modeButton} ${mode === 'pvp' ? styles.modeActive : ''}`}
           onClick={() => setGameMode('pvp')}
+          aria-pressed={mode === 'pvp'}
         >
           👥 2 Players
         </button>
         <button
           className={`${styles.modeButton} ${mode === 'pve' ? styles.modeActive : ''}`}
           onClick={() => setGameMode('pve', 'greedy')}
+          aria-pressed={mode === 'pve'}
         >
           🤖 vs Computer
         </button>

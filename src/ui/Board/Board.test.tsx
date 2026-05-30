@@ -96,6 +96,21 @@ describe('Board', () => {
     expect(cells[0]).toHaveAttribute('tabIndex', '-1');
   });
 
+  it('cell aria-label updates correctly when value changes', () => {
+    const board = createEmptyBoard();
+    const { rerender } = render(<Board board={board} onClick={() => {}} />);
+
+    expect(screen.getByLabelText(/Row 6, column 1: empty/i)).toBeInTheDocument();
+
+    board[5][0] = 1;
+    rerender(<Board board={board} onClick={() => {}} />);
+    expect(screen.getByLabelText(/Row 6, column 1: emerald disc/i)).toBeInTheDocument();
+
+    board[5][0] = 2;
+    rerender(<Board board={board} onClick={() => {}} />);
+    expect(screen.getByLabelText(/Row 6, column 1: amber disc/i)).toBeInTheDocument();
+  });
+
   it('supports Space and Enter to drop piece', () => {
     const board = createEmptyBoard();
     let clickedCol = -1;

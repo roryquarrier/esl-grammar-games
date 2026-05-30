@@ -35,6 +35,26 @@ describe('MoveHistory', () => {
     expect(screen.getByText(/🤖/)).toBeInTheDocument();
   });
 
+  it('scroll area has role log, aria-label, and aria-live polite', () => {
+    const moves: MoveRecord[] = [
+      { moveNumber: 1, player: 1, col: 0, row: 5, isAI: false },
+    ];
+    render(<MoveHistory moves={moves} gameMode="pvp" />);
+    const log = screen.getByRole('log');
+    expect(log).toHaveAttribute('aria-label', 'Move history');
+    expect(log).toHaveAttribute('aria-live', 'polite');
+  });
+
+  it('each move entry has descriptive aria-label', () => {
+    const moves: MoveRecord[] = [
+      { moveNumber: 1, player: 1, col: 0, row: 5, isAI: false },
+      { moveNumber: 2, player: 2, col: 1, row: 4, isAI: false },
+    ];
+    render(<MoveHistory moves={moves} gameMode="pvp" />);
+    expect(screen.getByLabelText('Move 1: Player 1 placed in column A')).toBeInTheDocument();
+    expect(screen.getByLabelText('Move 2: Player 2 placed in column B')).toBeInTheDocument();
+  });
+
   it('renders column labels correctly (A-G)', () => {
     const moves: MoveRecord[] = [0, 1, 2, 3, 4, 5, 6].map(col => ({
       moveNumber: col + 1,
