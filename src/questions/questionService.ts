@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import type { Question as DbQuestion } from '../lib/database.types';
+import type { DBQuestion as DbQuestion } from '../lib/database.types';
 import type { Question } from './types';
 import { QUESTION_BANK } from './questionBank';
 
@@ -13,7 +13,7 @@ function mapDbQuestionToLocal(db: DbQuestion): Question {
   return {
     id: db.id,
     question: db.stem,
-    options: db.options,
+    options: db.options as unknown as string[],
     correctIndex: db.correct_index,
     topic: db.topic,
     level: difficultyToLevel(db.difficulty),
