@@ -192,3 +192,123 @@ describe('getAIMove', () => {
     },
   );
 });
+
+// ─── edge cases ──────────────────────────────────────────────────────
+
+describe('edge cases', () => {
+  it('minimax handles nearly-full board (41/42 filled) without hanging', () => {
+    const board = emptyBoard();
+    // Fill columns 0-5 completely (6 rows × 6 cols = 36 cells)
+    for (let c = 0; c < 6; c++) {
+      for (let r = 0; r < 6; r++) {
+        board[r][c] = ((r + c) % 2 === 0 ? 1 : 2) as Cell;
+      }
+    }
+    // Fill column 6 rows 1-5 (5 cells) — leaves board[0][6] as the only empty cell
+    for (let r = 1; r < 6; r++) {
+      board[r][6] = (r % 2 === 0 ? 1 : 2) as Cell;
+    }
+    // 41 cells filled, 1 empty at board[0][6] → only col 6 is valid
+    expect(getValidColumns(board)).toEqual([6]);
+    // minimaxAI short-circuits via `if (valid.length === 1) return valid[0]`
+    const col = minimaxAI(board, 1);
+    expect(col).toBe(6);
+  });
+
+  it('all AI levels pick the only available column', () => {
+    const board = emptyBoard();
+    // Fill columns 0-5 completely (36 cells)
+    for (let c = 0; c < 6; c++) {
+      for (let r = 0; r < 6; r++) {
+        board[r][c] = ((r + c) % 2 === 0 ? 1 : 2) as Cell;
+      }
+    }
+    // Only column 6 is valid
+    expect(getValidColumns(board)).toEqual([6]);
+
+    // randomAI — probabilistic: run 50 times, must always pick col 6
+    for (let i = 0; i < 50; i++) {
+      expect(randomAI(board)).toBe(6);
+    }
+
+    // greedyAI — deterministic, picks available center column
+    expect(greedyAI(board, 1)).toBe(6);
+    expect(greedyAI(board, 2)).toBe(6);
+
+    // minimaxAI — short-circuits when only 1 valid column
+    expect(minimaxAI(board, 1)).toBe(6);
+    expect(minimaxAI(board, 2)).toBe(6);
+
+    // unified interface
+    expect(getAIMove(board, 1, 'random')).toBe(6);
+    expect(getAIMove(board, 1, 'greedy')).toBe(6);
+    expect(getAIMove(board, 1, 'minimax')).toBe(6);
+  });
+
+  it('minimax depth 5 completes under 2s with 20+ pieces on board', () => {
+    const board = emptyBoard();
+    // Simulate a mid-game board with 21 pieces (no winner)
+    const pieces: [number, number, Cell][] = [
+      [5, 0, 1], [5, 1, 2], [5, 2, 1], [5, 3, 2], [5, 4, 1], [5, 5, 2],
+      [4, 0, 2], [4, 1, 1], [4, 2, 2], [4, 3, 1], [4, 4, 2], [4, 5, 1],
+      [3, 0, 1], [3, 1, 2], [3, 2, 1], [3, 3, 2], [3, 4, 1],
+      [2, 0, 2], [2, 1, 1], [2, 2, 2], [2, 3, 1],
+    ];
+    for (const [r, c, v] of pieces) {
+      board[r][c] = v;
+    }
+    // Sanity check: board is mid-game, no winner, columns still open
+    expect(getValidColumns(board).length).toBeGreaterThanOrEqual(3);
+
+    const start = Date.now();
+    minimaxAI(board, 1, 5);
+    const elapsed = Date.now() - start;
+    expect(elapsed).toBeLessThan(2000);
+  });
+
+  it('never picks a full column (property-based, 50 iterations per AI level)', () => {
+    const board = emptyBoard();
+    // Fill column 0 completely with alternating players
+    for (let r = 0; r < 6; r++) {
+      board[r][0] = (r % 2 === 0 ? 1 : 2) as Cell;
+    }
+
+    for (let i = 0; i < 50; i++) {
+      expect(randomAI(board)).not.toBe(0);
+      expect(greedyAI(board, 1)).not.toBe(0);
+      expect(greedyAI(board, 2)).not.toBe(0);
+      expect(minimaxAI(board, 1)).not.toBe(0);
+      expect(minimaxAI(board, 2)).not.toBe(0);
+    }
+  });
+
+  it('greedyAI blocks the first opponent threat when multiple immediate threats exist', () => {
+    // Board (row 5 = bottom):
+    //   Row 3:  1 . . . . . .
+    //   Row 4:  1 . . . . . .
+    //   Row 5:  1 1 1 . . 2 .
+    //
+    // P1 (opponent of greedy AI) has two immediate 3-in-a-row threats:
+    //   1. Vertical   at col 0 — pieces at (5,0),(4,0),(3,0) need (2,0)
+    //   2. Horizontal at col 3 — pieces at (5,0),(5,1),(5,2) need (5,3)
+    //
+    // greedyAI scans valid columns [0..6] in order. It simulates opponent
+    // dropping at each column and returns the first blocking column (col 0).
+    //
+    // NOTE: This reveals a design gap — greedyAI uses simple 1-ply lookahead
+    // and picks the first blocking column rather than evaluating which threat
+    // is more dangerous. A future enhancement could evaluate threat severity
+    // (e.g. a vertical threat that also enables a fork is more dangerous than
+    // a single horizontal threat).
+
+    const board = emptyBoard();
+    setCell(board, 5, 0, 1);
+    setCell(board, 4, 0, 1);
+    setCell(board, 3, 0, 1);
+    setCell(board, 5, 1, 1);
+    setCell(board, 5, 2, 1);
+    setCell(board, 5, 5, 2); // AI piece (irrelevant to threats)
+
+    expect(greedyAI(board, 2)).toBe(0);
+  });
+});
