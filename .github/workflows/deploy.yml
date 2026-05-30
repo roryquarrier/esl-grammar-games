@@ -30,6 +30,10 @@ jobs:
       
       - name: Build
         run: npm run build
+        env:
+          VITE_SUPABASE_URL: https://wwegscweboppntomczij.supabase.co
+          VITE_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind3ZWdzY3dlYm9wcG50b21jemlqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAxMTc2OTgsImV4cCI6MjA5NTY5MzY5OH0.ZqDntXRB955qevaQdWYhjlgnGw0nWZOUepkj0YkuQ7A
+          VITE_CLERK_PUBLISHABLE_KEY: pk_test_d2lzZS1iZWRidWctNTYuY2xlcmsuYWNjb3VudHMuZGV2JA
       
       - name: Setup Pages
         uses: actions/configure-pages@v4
