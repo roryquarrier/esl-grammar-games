@@ -1,0 +1,119 @@
+.container {
+  max-width: 480px;
+}
+
+.heading {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-forest);
+  margin: 0 0 var(--space-4);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+}
+
+.label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-forest);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.input,
+.select {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-sage);
+  border-radius: var(--radius-button);
+  font-size: 14px;
+  font-family: inherit;
+  background: white;
+  color: var(--color-night);
+}
+
+.input:focus,
+.select:focus {
+  outline: 2px solid var(--color-emerald);
+  outline-offset: 1px;
+}
+
+.addButton {
+  align-self: flex-start;
+  background: var(--color-forest);
+  color: white;
+  border: none;
+  border-radius: var(--radius-button);
+  padding: var(--space-2) var(--space-5);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--duration-fast);
+  min-height: var(--hit-target-small);
+}
+
+.addButton:hover:not(:disabled) {
+  background: var(--color-emerald);
+}
+
+.addButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.successMsg {
+  color: var(--color-emerald);
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 var(--space-2);
+}
+
+.errorMsg {
+  color: #e74c3c;
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 var(--space-2);
+}
+
+.list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.listItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: white;
+  border: 1px solid var(--color-sage);
+  border-radius: var(--radius-card);
+}
+
+.avatar {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.name {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--color-night);
+  flex: 1;
+}
+
+.level {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--color-forest);
+  opacity: 0.7;
+}
