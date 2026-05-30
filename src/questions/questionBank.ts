@@ -18,7 +18,7 @@ import type { Question } from './types';
 
 // ─── Question Bank ──────────────────────────────────────────────────
 
-const QUESTION_BANK: Question[] = [
+export const QUESTION_BANK: Question[] = [
   // ── Present Simple (easy) ─────────────────────────────────────────
   {
     id: 'q001',
