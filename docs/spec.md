@@ -1258,6 +1258,31 @@ Logged via `easter_egg_events` table (post-MVP schema) for analytics.
 - **Badge icon**: 24×24 SVG, gold medal with "67" engraved.
 - **Sound**: a short 0.8s chime (MP3, ≤20 KB) played once at trigger moment, respects mute. Asset commissioned with the Lottie.
 
+## Implemented Features (Phase 2)
+
+### AI Opponent (`src/game/ai.ts`)
+Random, greedy, and minimax with alpha-beta pruning at depth 5.
+
+### Game Mode
+PvP (hotseat) and PvE (vs Computer) modes with a mode selector in `GameScreen`.
+
+### Question Bank (`src/questions/questionBank.ts`)
+70 questions across 15 grammar topics at 3 difficulty levels (beginner, intermediate, advanced).
+
+### Disc Drop Animations
+Framer Motion spring animation on newly placed discs using an emphasized decelerate curve.
+
+### Move History Sidebar
+Animated move log with player colour dots and AI emoji markers, displayed as a sidebar during the game.
+
+### Teacher Dashboard Lite
+Mock data dashboard showing 8 students, class code display, and per-student stats.
+
+### Test Coverage
+98 tests across 11 test files (vitest).
+
+---
+
 ## Appendix F: Security Incident Runbook (Pointer)
 
 Full runbook lives in `docs/security-incident-runbook.md` (created before public launch). It walks through:

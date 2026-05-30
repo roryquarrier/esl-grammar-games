@@ -1,0 +1,19 @@
+name: CI
+
+on:
+  push:
+    branches: [main, phase2-game-logic]
+  pull_request:
+    branches: [main, phase2-game-logic]
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: npm test -- --run
+      - run: npm run build

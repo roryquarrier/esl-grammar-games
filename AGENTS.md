@@ -100,6 +100,16 @@ npm run test     # vitest (must pass when tests exist)
 - Game logic: `src/game/` (pure functions, fully unit-tested)
 - Question system: `src/questions/` (isolated, mocked in game tests)
 
+## Pre-Merge Checklist
+
+```bash
+npm test -- --run
+npm run build
+```
+
+- Remove `console.log` and `debugger` statements
+- Review recent commits: `git log --oneline`
+
 ## References
 
 - `references/testing-patterns.md`
