@@ -14,7 +14,7 @@
  *   bookLevel?: string  — Cambridge Grammar in Use level (optional)
  */
 
-import type { Question } from '../ui/QuestionModal/QuestionModal';
+import type { Question } from './types';
 
 // ─── Question Bank ──────────────────────────────────────────────────
 

@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import {
-  getRandomQuestion,
   getQuestionBankSize,
   getQuestionsByTopic,
   getQuestionsByLevel,
@@ -13,28 +12,30 @@ describe('questionBank', () => {
     expect(getQuestionBankSize()).toBe(70);
   });
 
-  it('every question has 4 options', () => {
-    for (let i = 0; i < getQuestionBankSize(); i++) {
-      const q = getRandomQuestion();
-      expect(q.options).toHaveLength(4);
-    }
+  it('every question has exactly 4 options', () => {
+    const bank = Array.from({ length: getQuestionBankSize() }, (_, i) =>
+      getQuestionById(`q${String(i + 1).padStart(3, '0')}`)!,
+    );
+    bank.forEach(q => expect(q.options).toHaveLength(4));
   });
 
   it('every question has a valid correctIndex (0-3)', () => {
-    for (let i = 0; i < 50; i++) {
-      const q = getRandomQuestion();
+    const bank = Array.from({ length: getQuestionBankSize() }, (_, i) =>
+      getQuestionById(`q${String(i + 1).padStart(3, '0')}`)!,
+    );
+    bank.forEach(q => {
       expect(q.correctIndex).toBeGreaterThanOrEqual(0);
       expect(q.correctIndex).toBeLessThan(4);
-    }
+    });
   });
 
   it('every question has a unique id', () => {
     const ids = new Set<string>();
-    for (let i = 0; i < 200; i++) {
-      ids.add(getRandomQuestion().id);
-    }
-    // After 200 random picks, we should have seen many unique IDs
-    expect(ids.size).toBeGreaterThan(30);
+    const bank = Array.from({ length: getQuestionBankSize() }, (_, i) =>
+      getQuestionById(`q${String(i + 1).padStart(3, '0')}`)!,
+    );
+    bank.forEach(q => ids.add(q.id));
+    expect(ids.size).toBe(getQuestionBankSize());
   });
 
   it('getQuestionsByTopic returns correct results', () => {

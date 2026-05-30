@@ -1,13 +1,7 @@
 import styles from './QuestionModal.module.css';
 
-export interface Question {
-  id: string;
-  question: string;
-  options: string[];
-  correctIndex: number;
-  topic: string;
-  level: 'easy' | 'medium' | 'hard';
-}
+export type { Question } from '../../questions/types';
+import type { Question } from '../../questions/types';
 
 interface QuestionModalProps {
   question: Question;

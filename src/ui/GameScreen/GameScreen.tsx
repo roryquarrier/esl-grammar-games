@@ -44,12 +44,14 @@ export function GameScreen() {
   }, [phase, status, mode, currentPlayer, aiPlayer]);
 
   // Answer handler
-  const handleAnswer = (isCorrect: boolean) => {
+  const handleAnswer = useCallback((isCorrect: boolean) => {
     if (pendingColumn === null) return;
 
     if (isCorrect) {
-      dropPiece(pendingColumn);
-      resetTurn();
+      const success = dropPiece(pendingColumn);
+      if (success) {
+        resetTurn();
+      }
       return;
     }
 
@@ -64,7 +66,7 @@ export function GameScreen() {
       setWrongCount(nextWrongCount);
       setCurrentQuestion(getRandomQuestion());
     }
-  };
+  }, [pendingColumn, wrongCount, dropPiece]);
 
   // Trigger AI move after human player moves
   useEffect(() => {

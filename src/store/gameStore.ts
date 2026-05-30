@@ -42,7 +42,7 @@ export interface GameState {
 const ROWS = 6;
 const COLS = 7;
 
-const createEmptyBoard = (): Board => {
+export const createEmptyBoard = (): Board => {
   return Array(ROWS)
     .fill(null)
     .map(() => Array(COLS).fill(0) as Cell[]);

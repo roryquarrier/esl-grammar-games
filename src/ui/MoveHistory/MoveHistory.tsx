@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import type { MoveRecord } from '../../store/gameStore';
 import styles from './MoveHistory.module.css';
 
@@ -33,28 +33,26 @@ export function MoveHistory({ moves, gameMode }: MoveHistoryProps) {
     <div className={styles.container}>
       <h3 className={styles.title}>Move Log</h3>
       <div className={styles.scrollArea} ref={scrollRef}>
-        <AnimatePresence initial={false}>
-          {moves.map((move) => (
-            <motion.div
-              key={move.moveNumber}
-              className={styles.entry}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.2 }}
-            >
-              <span className={styles.moveNum}>#{move.moveNumber}</span>
-              <span
-                className={`${styles.playerDot} ${
-                  move.player === 1 ? styles.p1 : styles.p2
-                }`}
-              />
-              <span className={styles.detail}>
-                {gameMode === 'pve' && move.isAI ? '🤖 ' : ''}
-                Column {COLUMN_LABELS[move.col]}
-              </span>
-            </motion.div>
-          ))}
-        </AnimatePresence>
+        {moves.map((move) => (
+          <motion.div
+            key={move.moveNumber}
+            className={styles.entry}
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.2 }}
+          >
+            <span className={styles.moveNum}>#{move.moveNumber}</span>
+            <span
+              className={`${styles.playerDot} ${
+                move.player === 1 ? styles.p1 : styles.p2
+              }`}
+            />
+            <span className={styles.detail}>
+              {gameMode === 'pve' && move.isAI ? '🤖 ' : ''}
+              Column {COLUMN_LABELS[move.col]}
+            </span>
+          </motion.div>
+        ))}
       </div>
     </div>
   );
