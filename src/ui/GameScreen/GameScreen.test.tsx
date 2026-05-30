@@ -24,8 +24,8 @@ vi.mock('../../store/gameStore', () => ({
   useGameStore: () => mockStoreState,
 }));
 
-vi.mock('../../questions/questionBank', () => ({
-  getRandomQuestion: () => mockQuestion,
+vi.mock('../../questions/questionService', () => ({
+  getRandomQuestion: () => Promise.resolve(mockQuestion),
 }));
 
 describe('GameScreen', () => {
@@ -80,32 +80,32 @@ describe('GameScreen', () => {
     expect(screen.getByText(/Player 1.*turn/i)).toBeInTheDocument();
   });
 
-  it('column click opens question modal', () => {
+  it('column click opens question modal', async () => {
     render(<GameScreen />);
     const cells = screen.getAllByRole('gridcell');
     fireEvent.click(cells[0]);
-    expect(screen.getByText(mockQuestion.question)).toBeInTheDocument();
+    expect(await screen.findByText(mockQuestion.question)).toBeInTheDocument();
   });
 
-  it('correct answer drops piece', () => {
+  it('correct answer drops piece', async () => {
     render(<GameScreen />);
     const cells = screen.getAllByRole('gridcell');
     fireEvent.click(cells[0]);
-    const correctButton = screen.getByText('went').closest('button');
+    const correctButton = (await screen.findByText('went')).closest('button');
     fireEvent.click(correctButton!);
     expect(mockDropPiece).toHaveBeenCalledTimes(1);
     expect(mockDropPiece).toHaveBeenCalledWith(0);
   });
 
-  it('3 wrong answers trigger cooldown', () => {
+  it('3 wrong answers trigger cooldown', async () => {
     render(<GameScreen />);
     const cells = screen.getAllByRole('gridcell');
     fireEvent.click(cells[0]);
     for (let i = 0; i < 3; i++) {
-      const wrongButton = screen.getByText('goed').closest('button');
+      const wrongButton = (await screen.findByText('goed')).closest('button');
       fireEvent.click(wrongButton!);
     }
-    expect(screen.getByText(/cooling down/i)).toBeInTheDocument();
+    expect(await screen.findByText(/cooling down/i)).toBeInTheDocument();
   });
 
   it('New Game button appears when game is won', () => {

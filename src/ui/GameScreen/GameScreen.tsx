@@ -3,7 +3,7 @@ import { Board } from '../Board/Board';
 import { MoveHistory } from '../MoveHistory/MoveHistory';
 import { QuestionModal, type Question } from '../QuestionModal/QuestionModal';
 import { useGameStore } from '../../store/gameStore';
-import { getRandomQuestion } from '../../questions/questionBank';
+import { getRandomQuestion } from '../../questions/questionService';
 import styles from './GameScreen.module.css';
 
 type GamePhase = 'idle' | 'asking' | 'cooldown';
@@ -23,6 +23,7 @@ export function GameScreen() {
   const [wrongCount, setWrongCount] = useState(0);
   const [pendingColumn, setPendingColumn] = useState<number | null>(null);
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
 
   const cooldownEndRef = useRef(0);
   const rafRef = useRef(0);
@@ -33,21 +34,25 @@ export function GameScreen() {
     setWrongCount(0);
     setPendingColumn(null);
     setCooldownRemaining(0);
+    setIsLoading(false);
   }, []);
 
   // Column click: start question round (only for human players)
-  const handleColumnClick = useCallback((col: number) => {
+  const handleColumnClick = useCallback(async (col: number) => {
     if (phase !== 'idle' || status !== 'playing') return;
     // Block clicks when it's AI's turn
     if (mode === 'pve' && currentPlayer === aiPlayer) return;
     setPendingColumn(col);
-    setCurrentQuestion(getRandomQuestion());
+    setIsLoading(true);
     setWrongCount(0);
     setPhase('asking');
+    const question = await getRandomQuestion();
+    setCurrentQuestion(question);
+    setIsLoading(false);
   }, [phase, status, mode, currentPlayer, aiPlayer]);
 
   // Answer handler
-  const handleAnswer = useCallback((isCorrect: boolean) => {
+  const handleAnswer = useCallback(async (isCorrect: boolean) => {
     if (pendingColumn === null) return;
 
     if (isCorrect) {
@@ -67,7 +72,11 @@ export function GameScreen() {
       setCurrentQuestion(null);
     } else {
       setWrongCount(nextWrongCount);
-      setCurrentQuestion(getRandomQuestion());
+      setIsLoading(true);
+      setCurrentQuestion(null);
+      const question = await getRandomQuestion();
+      setCurrentQuestion(question);
+      setIsLoading(false);
     }
   }, [pendingColumn, wrongCount, dropPiece]);
 
@@ -177,7 +186,11 @@ export function GameScreen() {
         <MoveHistory moves={moveHistory} gameMode={mode} />
       </div>
 
-      {phase === 'asking' && currentQuestion && (
+      {phase === 'asking' && isLoading && (
+        <div className={styles.loading}>Loading question...</div>
+      )}
+
+      {phase === 'asking' && !isLoading && currentQuestion && (
         <QuestionModal
           question={currentQuestion}
           onAnswer={handleAnswer}
