@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Board } from '../Board/Board';
 import { MoveHistory } from '../MoveHistory/MoveHistory';
 import { QuestionModal, type Question } from '../QuestionModal/QuestionModal';
@@ -24,13 +24,16 @@ export function GameScreen() {
   const [pendingColumn, setPendingColumn] = useState<number | null>(null);
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
 
-  const resetTurn = () => {
+  const cooldownEndRef = useRef(0);
+  const rafRef = useRef(0);
+
+  const resetTurn = useCallback(() => {
     setPhase('idle');
     setCurrentQuestion(null);
     setWrongCount(0);
     setPendingColumn(null);
     setCooldownRemaining(0);
-  };
+  }, []);
 
   // Column click: start question round (only for human players)
   const handleColumnClick = useCallback((col: number) => {
@@ -75,24 +78,26 @@ export function GameScreen() {
     }
   }, [currentPlayer, mode, status, aiPlayer, phase, triggerAIMove]);
 
-  // Cooldown timer
+  // Cooldown timer — uses requestAnimationFrame for precise countdown
   useEffect(() => {
     if (phase !== 'cooldown') return;
 
-    const interval = setInterval(() => {
-      setCooldownRemaining(prev => {
-        const next = prev - 1000;
-        if (next <= 0) {
-          clearInterval(interval);
-          resetTurn();
-          return 0;
-        }
-        return next;
-      });
-    }, 1000);
+    cooldownEndRef.current = Date.now() + COOLDOWN_MS;
 
-    return () => clearInterval(interval);
-  }, [phase]);
+    const tick = () => {
+      const remaining = Math.max(0, cooldownEndRef.current - Date.now());
+      setCooldownRemaining(remaining);
+      if (remaining > 0) {
+        rafRef.current = requestAnimationFrame(tick);
+      } else {
+        resetTurn();
+      }
+    };
+
+    rafRef.current = requestAnimationFrame(tick);
+
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [phase, resetTurn]);
 
   // Reset turn state on game reset
   useEffect(() => {
